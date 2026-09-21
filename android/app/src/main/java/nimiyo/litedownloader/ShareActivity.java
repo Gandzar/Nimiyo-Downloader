@@ -103,7 +103,18 @@ public class ShareActivity extends AppCompatActivity {
         });
 
         setContentView(webView);
-        webView.loadUrl("file:///android_asset/public/share.html");
+        
+        android.content.SharedPreferences prefs = getSharedPreferences("nimiyo_app_settings_prefs", Context.MODE_PRIVATE);
+        String settingsJson = prefs.getString("settings_json", "{}");
+        String uiTheme = "neobrutalism";
+        boolean darkMode = false;
+        try {
+            JSONObject obj = new JSONObject(settingsJson);
+            uiTheme = obj.optString("uiTheme", "neobrutalism");
+            darkMode = obj.optBoolean("darkMode", false);
+        } catch (Exception ignored) {}
+
+        webView.loadUrl("file:///android_asset/public/share.html?theme=" + uiTheme + "&darkMode=" + (darkMode ? "1" : "0"));
     }
 
     @Override
@@ -117,8 +128,14 @@ public class ShareActivity extends AppCompatActivity {
     private void dispatchUrlToWebview() {
         if (webView != null) {
             String escapedUrl = extractedUrl.replace("\\", "\\\\").replace("\"", "\\\"");
+            android.content.SharedPreferences prefs = getSharedPreferences("nimiyo_app_settings_prefs", Context.MODE_PRIVATE);
+            String settingsJson = prefs.getString("settings_json", "{}");
+            String escapedSettings = settingsJson.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+
             webView.evaluateJavascript(
                 "window.NimidzShareBridge = window.NimiyoShareBridge;" +
+                "window.__NIMIYO_SETTINGS_RAW = \"" + escapedSettings + "\";" +
+                "try { if (window.applyNimiyoSettings) { window.applyNimiyoSettings(JSON.parse(\"" + escapedSettings + "\")); } } catch(e) {}" +
                 "window.__NIMIYO_SHARE_URL = \"" + escapedUrl + "\";" +
                 "if (window.onShareUrlReady) { window.onShareUrlReady(\"" + escapedUrl + "\"); }",
                 null
@@ -267,6 +284,16 @@ public class ShareActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public String getAppSettings() {
+            try {
+                android.content.SharedPreferences prefs = activity.getSharedPreferences("nimiyo_app_settings_prefs", Context.MODE_PRIVATE);
+                return prefs.getString("settings_json", "{}");
+            } catch (Exception e) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
         public void dismiss() {
             dismissDialog();
         }
@@ -276,6 +303,24 @@ public class ShareActivity extends AppCompatActivity {
             activity.runOnUiThread(() -> {
                 activity.moveTaskToBack(true);
             });
+        }
+
+        @JavascriptInterface
+        public void saveHistoryItem(String itemJson) {
+            try {
+                if (itemJson != null && !itemJson.trim().isEmpty()) {
+                    android.content.SharedPreferences prefs = activity.getSharedPreferences("nimiyo_app_history_prefs", Context.MODE_PRIVATE);
+                    String current = prefs.getString("pending_history_list", "[]");
+                    org.json.JSONArray arr;
+                    try {
+                        arr = new org.json.JSONArray(current);
+                    } catch (Exception e) {
+                        arr = new org.json.JSONArray();
+                    }
+                    arr.put(new org.json.JSONObject(itemJson));
+                    prefs.edit().putString("pending_history_list", arr.toString()).apply();
+                }
+            } catch (Exception ignored) {}
         }
 
         @JavascriptInterface

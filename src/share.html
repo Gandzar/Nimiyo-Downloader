@@ -1,13 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="share-page">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>NIMIYO – Quick Save</title>
   <link rel="stylesheet" href="index.css" />
+  <link rel="stylesheet" href="soft-ui.css" />
   <link rel="stylesheet" href="share.css" />
+  <script>
+    (function() {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var urlTheme = params.get("theme");
+        var urlDark = params.get("darkMode");
+
+        var s = {};
+        try {
+          if (window.NimiyoShareBridge && typeof window.NimiyoShareBridge.getAppSettings === 'function') {
+            s = JSON.parse(window.NimiyoShareBridge.getAppSettings() || "{}");
+          } else if (window.NimidzShareBridge && typeof window.NimidzShareBridge.getAppSettings === 'function') {
+            s = JSON.parse(window.NimidzShareBridge.getAppSettings() || "{}");
+          } else {
+            s = JSON.parse(localStorage.getItem("nimiyo_settings") || "{}");
+          }
+        } catch(e) {}
+
+        var theme = urlTheme || s.uiTheme || "neobrutalism";
+        var isDark = (urlDark === "1" || urlDark === "true") || !!s.darkMode;
+
+        document.documentElement.classList.add("theme-" + theme);
+        if (isDark) document.documentElement.classList.add("dark-mode");
+        document.addEventListener("DOMContentLoaded", function() {
+          document.body.classList.add("theme-" + theme);
+          if (isDark) document.body.classList.add("dark-mode");
+        });
+      } catch(e) {}
+    })();
+  </script>
 </head>
-<body>
+<body class="share-body">
   <!-- Backdrop Blur Click-to-Dismiss -->
   <div id="backdrop" onclick="dismissPanel()"></div>
 
@@ -95,8 +126,8 @@
   <!-- Toast Notification Overlay -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- Scripts -->
-  <script src="js/scrapr.bundle.js"></script>
+  <!-- Scripts (100% matching ingredientAPP) -->
+  <script type="module" src="js/scrapers/index.js"></script>
   <script type="module" src="share.js"></script>
 </body>
 </html>

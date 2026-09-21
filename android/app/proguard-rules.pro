@@ -14,8 +14,21 @@
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable
+-keepattributes *Annotation*
+-keepattributes JavascriptInterface
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve WebView JavaScript Interfaces
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Preserve Capacitor Plugins and Bridge
+-keep public class * extends com.getcapacitor.Plugin {
+    public *;
+}
+-keep class com.getcapacitor.** { *; }
+
+# Preserve App Native Classes and Plugins
+-keep class nimiyo.litedownloader.** { *; }
+

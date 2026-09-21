@@ -6,16 +6,16 @@
 
   **A Premium, Ultra-Fast & Lightweight Universal Media Downloader for Android**
 
-  [![Release](https://img.shields.io/badge/Release-v1.0.0--Lite-00C48C.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader/releases)
+  [![Release](https://img.shields.io/badge/Release-v2.0.0--Lite-00C48C.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader/releases)
   [![Platform](https://img.shields.io/badge/Platform-Android_10+-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader)
-  [![Design](https://img.shields.io/badge/Design-Neobrutalism-FFE500.svg?style=for-the-badge&logoColor=black)](https://github.com/nimidz/Nimiyo-Downloader)
+  [![Design](https://img.shields.io/badge/Design-Neobrutalism_%26_SoftUI-FFE500.svg?style=for-the-badge&logoColor=black)](https://github.com/nimidz/Nimiyo-Downloader)
   [![License](https://img.shields.io/badge/License-MIT-black.svg?style=for-the-badge)](LICENSE)
   [![Trakteer](https://img.shields.io/badge/Support-Trakteer-be1e2d.svg?style=for-the-badge&logo=ko-fi&logoColor=white)](https://trakteer.id/nimidz)
 
   <br/>
 
   <p align="center">
-    <b>Download videos, music, high-res photos, and audio tracks effortlessly from 14+ platforms without ads, popups, or limits.</b>
+    <b>Download videos, music, high-res photos, and audio tracks effortlessly from 15+ platforms without ads, popups, or limits.</b>
   </p>
 
   <p align="center">
@@ -31,17 +31,77 @@
 
 ---
 
+# Nimiyo v2.0.0 — What's New?
+
+## ✨ New
+
+- Added a new Soft UI Design, customizable from Settings → Appearance UI/UX.
+- Added Native Notifications for music playback, download progress, and other activities.
+- Added a new integrated Music App for playing downloaded music offline and viewing lyrics when available.
+- Added a new Navigation Bar for easier navigation.
+- Added Shopee as a new download platform with support for HD Shopee videos.
+- Added music-player functionality for playing audio files from the Nimiyo Audio folder.
+- Added the ability to select multiple songs for moving or deleting.
+- Added Playlist support to the Music Player.
+- Added a Video/Photo Media Player to Download History.
+
+## 🔐 New System Permissions
+
+- Added permission to access audio files for managing audio files across the device.
+- Added storage permission to allow deleting audio files directly from the Music Player.
+
+## 🐛 Fixed
+
+- Fixed Threads platform URL handling (www.threads.com).
+- Fixed Auto Paste Link functionality.
+- Fixed Auto-Analyze functionality when pasting links through keyboard suggestions (Gboard / autocomplete chip).
+- Fixed the Paste Icon not functioning.
+- Fixed downloaded media from QuickSave not being saved to History.
+- Fixed Native Notifications not appearing for certain tasks.
+- Fixed Duplicate Files settings so Skip and Overwrite options work correctly on Android storage.
+- Fixed Batch Photo Mode and the First Photo Only option for multi-photo / carousel content.
+- Fixed History Limit so history is trimmed immediately when the retention limit is changed.
+- Fixed Space Mono font installation to properly load from Google Fonts.
+
+## ⚙️ Improvements
+
+- Enabled Concurrent Downloads, allowing 2, 3, or 5 downloads to run simultaneously in parallel.
+- Added Auto-Retry and Max Retry handling when downloads are interrupted by unstable network conditions.
+- Enabled Wi-Fi Only downloads with real-time network connection detection.
+- Improved Clear Cache and Periodic Cache Cleanup to properly remove temporary files from storage.
+- Enabled Keep Screen Awake using the native Android Screen WakeLock.
+- Connected Auto-Play and Auto-Loop settings to the built-in Video Player.
+- Integrated i18n language translation throughout the Music Player.
+- Refactored platforms.js into separate platform files such as tiktok.js, instagram.js, etc. to reduce application size and make platform maintenance easier.
+
+## ⚠️ Known Issues
+
+- YouTube Music — currently not working properly.
+- Instagram Music — currently not working properly.
+- Facebook — server-related issues.
+- Pixiv — downloads can be slow and may fail.
+
+---
+
 ## 📱 App Screenshots
 
 <div align="center">
 
-| 1. Home / Analyzer | 2. Download Options | 3. History & Storage |
+| 1. Home / Analyzer | 2. Media Player & Tabs | 3. History & Storage |
 | :---: | :---: | :---: |
-| <img src="assets/screenshots/screenshot_1.jpg" width="220" alt="1. Home Screen" /> | <img src="assets/screenshots/screenshot_2.jpg" width="220" alt="2. Download Links" /> | <img src="assets/screenshots/screenshot_3.jpg" width="220" alt="3. History Modal" /> |
+| <img src="assets/screenshots/screenshot_01_home.jpg" width="220" alt="1. Home Screen" /> | <img src="assets/screenshots/screenshot_02_player.jpg" width="220" alt="2. Player Page" /> | <img src="assets/screenshots/screenshot_03_history.jpg" width="220" alt="3. History Page" /> |
 
-| 4. Built-in Player | 5. Settings Menu | 6. Rules & Guidelines |
+| 4. Settings & UI/UX | 5. Quick Save Floating Panel | 6. Full Music Player Window |
 | :---: | :---: | :---: |
-| <img src="assets/screenshots/screenshot_4.jpg" width="220" alt="4. Media Player" /> | <img src="assets/screenshots/screenshot_5.jpg" width="220" alt="5. Settings Menu" /> | <img src="assets/screenshots/screenshot_6.jpg" width="220" alt="6. Rules Modal" /> |
+| <img src="assets/screenshots/screenshot_04_settings.jpg" width="220" alt="4. Settings Page" /> | <img src="assets/screenshots/screenshot_05_quicksave.jpg" width="220" alt="5. Quick Download Page" /> | <img src="assets/screenshots/screenshot_06_music_player.jpg" width="220" alt="6. Music Player Window" /> |
+
+| 7. Lyrics & Timestamps | 8. Multi-Select Song Manager | 9. Custom Playlists |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/screenshot_07_lyrics.jpg" width="220" alt="7. Lyrics Page" /> | <img src="assets/screenshots/screenshot_08_multiselect.jpg" width="220" alt="8. Multi-Select Songs" /> | <img src="assets/screenshots/screenshot_09_playlist.jpg" width="220" alt="9. Playlist Page" /> |
+
+| 10. Built-in HD Video Player |
+| :---: |
+| <img src="assets/screenshots/screenshot_10_videoplayer.jpg" width="280" alt="10. Video Player" /> |
 
 </div>
 
@@ -50,16 +110,18 @@
 ## ✨ Key Features
 
 - ⚡ **All-In-One Universal Downloader**: Support for videos, audio tracks, covers, slideshows, and photo carousels.
-- 🎨 **Neobrutalist Aesthetic UI/UX**: Distinctive bold borders, high-contrast accents, haptic feedback, custom typography (*MiSans, Inter, Outfit, Space Mono*), and fluid Dark Mode.
-- 📲 **Quick Save Share Sheet**: Share links from any app (TikTok, YouTube, Instagram) directly into NIMIYO's floating bottom sheet without leaving your current app.
+- 🎨 **Neobrutalism & Soft UI Aesthetics**: Distinctive bold borders or smooth modern Soft UI styles, customizable from Settings. Includes fluid Dark Mode and custom typography (*MiSans, Inter, Outfit, Space Mono*).
+- 🎵 **Built-In Music Player**: Offline audio playback from `Download/Nimiyo/AudioYo/`, playlist creation, interactive artist/album explorer, synced lyrics, and native media controls.
+- 📲 **Quick Save Share Sheet**: Share links from any app (TikTok, YouTube, Instagram, Shopee) directly into NIMIYO's floating bottom sheet without leaving your current app.
+- 🎬 **Integrated Video & Photo Viewer**: Smooth in-app playback for history items with full-screen, looping, and native sharing.
 - 🗂️ **Organized Media Storage**:
   - 🎬 `Download/Nimiyo/VideoYo/`
   - 🎵 `Download/Nimiyo/AudioYo/`
   - 🖼️ `Download/Nimiyo/ImageYo/`
 - 📁 **Direct Folder Opener**: One-tap direct folder navigation into Xiaomi File Explorer, Samsung My Files, Google Files, and ZArchiver.
-- 🔄 **Auto Server Switch & Smart Retry**: Automatically falls back to alternative backend scraper servers if a primary host or CDN is busy.
+- 🔄 **Smart Concurrent Downloads & Auto-Retry**: Download up to 5 items simultaneously in parallel with smart automatic retries on connection hiccups.
 - 🚀 **In-App Auto Update**: Effortlessly check and install new APK updates directly inside the app with native install permission integration.
-- 🌍 **Multilingual Localization**: Complete native language auto-detection and parity for **English**, **Bahasa Indonesia**, **简体中文**, and **日本語**.
+- 🌍 **Multilingual Localization**: Complete native language parity for **English**, **Bahasa Indonesia**, **简体中文**, and **日本語**.
 - 🛡️ **Community Guidelines & Rules**: Built-in Terms of Use modal prohibiting harmful, violent, and NSFW content.
 - 🔒 **Privacy First**: Built-in Incognito Mode, zero tracking, and local history management.
 
@@ -72,6 +134,7 @@
 | **YouTube** | ✅ | ✅ | ❌ | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
 | **TikTok** | ✅ (No Watermark) | ✅ | ✅ (Slideshow) | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
 | **Instagram** | ✅ (Reels/Stories) | ✅ | ✅ (Carousels) | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
+| **Shopee** | ✅ (HD Video) | ❌ | ✅ (Product Media) | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
 | **Spotify** | ❌ | ✅ (320kbps MP3) | ✅ (Cover Art) | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
 | **Apple Music** | ❌ | ✅ (HQ M4A/MP3) | ✅ (Cover Art) | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
 | **Twitter / X** | ✅ (HD) | ❌ | ✅ | ![Active](https://img.shields.io/badge/Online-brightgreen?style=flat-square) |
@@ -94,26 +157,35 @@ Nimiyo-Downloader/
 │   ├── icon_untukdi_aboutthisapp.webp
 │   ├── nimiyo_icon.webp
 │   └── screenshots/
-│       ├── screenshot_1.jpg  # Home Screen
-│       ├── screenshot_2.jpg  # Download Links
-│       ├── screenshot_3.jpg  # History Modal
-│       ├── screenshot_4.jpg  # In-App Player
-│       ├── screenshot_5.jpg  # Settings
-│       └── screenshot_6.jpg  # Rules Modal
+│       ├── screenshot_01_home.jpg
+│       ├── screenshot_02_player.jpg
+│       ├── screenshot_03_history.jpg
+│       ├── screenshot_04_settings.jpg
+│       ├── screenshot_05_quicksave.jpg
+│       ├── screenshot_06_music_player.jpg
+│       ├── screenshot_07_lyrics.jpg
+│       ├── screenshot_08_multiselect.jpg
+│       ├── screenshot_09_playlist.jpg
+│       └── screenshot_10_videoplayer.jpg
 ├── src/                      # Web UI & Application Logic
 │   ├── index.html            # Main Application UI
 │   ├── app.js                # State Management & Localization
 │   ├── index.css             # Neobrutalist Design System Tokens
-│   ├── platform.js           # Media Analysis & Platform Engine
+│   ├── soft-ui.css           # Soft UI Modern Tokens
+│   ├── scrapers/             # Modular Media Analysis & Platform Scrapers
+│   ├── js/musicPlayer.js     # Native-Style Music Player Engine
 │   ├── share.html            # Native Quick Save Floating Panel
 │   └── share.js              # Quick Save Logic & Bridge
 ├── android/                  # Native Android Platform (Capacitor)
 │   ├── app/src/main/java/nimiyo/litedownloader/
-│   │   ├── MainActivity.java      # Main App Container
-│   │   ├── ShareActivity.java     # Quick Save Native Bottom Sheet
-│   │   └── MediaSaverPlugin.java  # MediaStore Storage & APK Installer Plugin
+│   │   ├── MainActivity.java         # Main App Container
+│   │   ├── ShareActivity.java        # Quick Save Native Bottom Sheet
+│   │   ├── MediaSaverPlugin.java     # MediaStore Storage & APK Installer Plugin
+│   │   ├── MusicPlaybackService.java # Android Native Media Notification & Session
+│   │   ├── VideoPlayerActivity.java  # Hardware Accelerated Video Player
+│   │   └── ImageViewerActivity.java  # High-Res Image Viewer
 │   └── app/src/main/AndroidManifest.xml
-├── build.js                  # Scrapr Engine Bundler & Asset Syncer
+├── build.js                  # Scraper Engine Bundler & Asset Syncer
 ├── version.json              # In-App Auto Update Manifest
 └── capacitor.config.json     # Capacitor Configuration
 ```
@@ -141,8 +213,8 @@ Nimiyo-Downloader/
 
 3. **Bundle web assets & sync Capacitor**:
    ```bash
-   node build.js
-   npx cap copy
+   npm run build
+   npx cap copy android
    ```
 
 4. **Compile Release APK**:

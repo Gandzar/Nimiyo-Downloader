@@ -1,7 +1,14 @@
 /* share.css — NIMIYO Quick Save Dialog Styles */
 
-html, body {
+html, body,
+html.share-page, body.share-body,
+html.theme-softui, body.theme-softui,
+html.theme-neobrutalism, body.theme-neobrutalism,
+html.dark-mode, body.dark-mode,
+body.theme-softui.dark-mode,
+body.theme-neobrutalism.dark-mode {
   background: transparent !important;
+  background-color: transparent !important;
   height: 100%;
   margin: 0;
   padding: 0;

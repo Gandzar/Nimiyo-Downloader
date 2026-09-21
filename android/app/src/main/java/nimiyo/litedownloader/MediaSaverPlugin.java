@@ -3,33 +3,111 @@ package nimiyo.litedownloader;
 import android.app.DownloadManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.AudioManager;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.Settings;
+import android.view.WindowManager;
 import android.util.Base64;
+import android.util.Log;
+import android.database.Cursor;
+import android.content.ContentUris;
+import android.media.MediaScannerConnection;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "MediaSaver")
 public class MediaSaverPlugin extends Plugin {
 
-    private static final String CHANNEL_ID = "nimiyo_download_channel";
+    private static MediaSaverPlugin instance = null;
+    private static final String CHANNEL_ID = "nimiyo_download_channel_v3";
     private static final int NOTIFICATION_ID = 8801;
+    private static final String MUSIC_CHANNEL_ID = "nimiyo_media_channel";
+    private static final int MUSIC_NOTIFICATION_ID = 8803;
+    private BroadcastReceiver becomingNoisyReceiver = null;
+
+    public static void dispatchMediaAction(String action, Long positionMs) {
+        if (instance != null) {
+            JSObject data = new JSObject();
+            data.put("action", action);
+            if (positionMs != null) {
+                data.put("position", positionMs / 1000.0);
+            }
+            instance.notifyListeners("onMusicMediaAction", data);
+        }
+    }
+
+    @Override
+    public void load() {
+        super.load();
+        instance = this;
+        try {
+            becomingNoisyReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                        dispatchMediaAction("pause", null);
+                    }
+                }
+            };
+            IntentFilter filter = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                getContext().registerReceiver(becomingNoisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                getContext().registerReceiver(becomingNoisyReceiver, filter);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void handleOnDestroy() {
+        if (becomingNoisyReceiver != null) {
+            try {
+                getContext().unregisterReceiver(becomingNoisyReceiver);
+                becomingNoisyReceiver = null;
+            } catch (Exception ignored) {}
+        }
+        if (instance == this) {
+            instance = null;
+        }
+        super.handleOnDestroy();
+    }
 
     private void ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -44,10 +122,43 @@ public class MediaSaverPlugin extends Plugin {
                     );
                     newChannel.setDescription("Status unduhan berkas Nimiyo");
                     newChannel.setShowBadge(false);
+                    newChannel.setSound(null, null);
+                    newChannel.enableVibration(false);
                     manager.createNotificationChannel(newChannel);
                 }
             }
         }
+    }
+
+    private void ensureMusicNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                NotificationChannel channel = manager.getNotificationChannel(MUSIC_CHANNEL_ID);
+                if (channel == null) {
+                    NotificationChannel newChannel = new NotificationChannel(
+                        MUSIC_CHANNEL_ID,
+                        "Nimiyo Media Player",
+                        NotificationManager.IMPORTANCE_LOW
+                    );
+                    newChannel.setDescription("Status pemutar audio/musik Nimiyo");
+                    newChannel.setShowBadge(false);
+                    manager.createNotificationChannel(newChannel);
+                }
+            }
+        }
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (getActivity() != null && getActivity().checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                getActivity().runOnUiThread(() -> {
+                    getActivity().requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
+                });
+            }
+        }
+        call.resolve(new JSObject().put("requested", true));
     }
 
     @PluginMethod
@@ -67,16 +178,26 @@ public class MediaSaverPlugin extends Plugin {
                 return;
             }
 
+            int appIcon = isCompleted ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_sys_download;
+
+            Intent openAppIntent = new Intent(getContext(), MainActivity.class);
+            openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
+                getContext(), 0, openAppIntent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT : android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            );
+
             NotificationCompat.Builder builder = new NotificationCompat.Builder(getContext(), CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setSmallIcon(appIcon)
                 .setContentTitle(title)
                 .setContentText(message)
+                .setContentIntent(pendingIntent)
                 .setOngoing(!isCompleted)
                 .setAutoCancel(isCompleted)
+                .setOnlyAlertOnce(true)
                 .setPriority(isCompleted ? NotificationCompat.PRIORITY_DEFAULT : NotificationCompat.PRIORITY_LOW);
 
             if (isCompleted) {
-                builder.setSmallIcon(android.R.drawable.stat_sys_download_done);
                 builder.setProgress(0, 0, false);
             } else {
                 builder.setProgress(max, progress, false);
@@ -100,6 +221,408 @@ public class MediaSaverPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Clear notification failed: " + e.getMessage());
         }
+    }
+
+    @PluginMethod
+    public void showMusicPlaybackNotification(PluginCall call) {
+        String title = call.getString("title", "NIMIYO Player");
+        String artist = call.getString("artist", "");
+        String album = call.getString("album", "");
+        String artwork = call.getString("artwork", null);
+        long duration = 0;
+        long position = 0;
+
+        try {
+            if (call.getData().has("duration")) {
+                duration = call.getData().optLong("duration", 0);
+                if (duration <= 0) {
+                    duration = (long) call.getData().optDouble("duration", 0.0);
+                }
+            }
+            if (call.getData().has("position")) {
+                position = call.getData().optLong("position", 0);
+                if (position <= 0) {
+                    position = (long) call.getData().optDouble("position", 0.0);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        boolean isPlaying = call.getBoolean("isPlaying", true);
+
+        try {
+            Intent intent = new Intent(getContext(), MusicPlaybackService.class);
+            intent.setAction(MusicPlaybackService.ACTION_UPDATE);
+            intent.putExtra(MusicPlaybackService.EXTRA_TITLE, title);
+            intent.putExtra(MusicPlaybackService.EXTRA_ARTIST, artist);
+            intent.putExtra(MusicPlaybackService.EXTRA_ALBUM, album);
+            if (artwork != null) {
+                intent.putExtra(MusicPlaybackService.EXTRA_ARTWORK, artwork);
+            }
+            intent.putExtra(MusicPlaybackService.EXTRA_DURATION, duration);
+            intent.putExtra(MusicPlaybackService.EXTRA_POSITION, position);
+            intent.putExtra(MusicPlaybackService.EXTRA_IS_PLAYING, isPlaying);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isPlaying) {
+                getContext().startForegroundService(intent);
+            } else {
+                getContext().startService(intent);
+            }
+
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) {
+            call.reject("Music notification failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void clearMusicPlaybackNotification(PluginCall call) {
+        try {
+            Intent intent = new Intent(getContext(), MusicPlaybackService.class);
+            intent.setAction(MusicPlaybackService.ACTION_CLEAR);
+            getContext().startService(intent);
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) {
+            call.reject("Clear music notification failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getPendingSharedHistory(PluginCall call) {
+        try {
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences("nimiyo_app_history_prefs", Context.MODE_PRIVATE);
+            String jsonArrayStr = prefs.getString("pending_history_list", "[]");
+            prefs.edit().putString("pending_history_list", "[]").apply();
+
+            JSObject ret = new JSObject();
+            ret.put("items", new com.getcapacitor.JSArray(jsonArrayStr));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to get pending history: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void saveSharedHistoryItem(PluginCall call) {
+        try {
+            JSObject item = call.getObject("item");
+            if (item != null) {
+                android.content.SharedPreferences prefs = getContext().getSharedPreferences("nimiyo_app_history_prefs", Context.MODE_PRIVATE);
+                String current = prefs.getString("pending_history_list", "[]");
+                org.json.JSONArray arr;
+                try {
+                    arr = new org.json.JSONArray(current);
+                } catch (Exception e) {
+                    arr = new org.json.JSONArray();
+                }
+                arr.put(new org.json.JSONObject(item.toString()));
+                prefs.edit().putString("pending_history_list", arr.toString()).apply();
+            }
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) {
+            call.reject("Failed to save history item: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void saveAppSettings(PluginCall call) {
+        try {
+            String settingsJson = call.getString("settings", "{}");
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences("nimiyo_app_settings_prefs", Context.MODE_PRIVATE);
+            prefs.edit().putString("settings_json", settingsJson).apply();
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) {
+            call.reject("Failed to save app settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getAppSettings(PluginCall call) {
+        try {
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences("nimiyo_app_settings_prefs", Context.MODE_PRIVATE);
+            String settingsJson = prefs.getString("settings_json", "{}");
+            JSObject ret = new JSObject();
+            ret.put("settings", settingsJson);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to get app settings: " + e.getMessage());
+        }
+    }
+
+    private final ExecutorService downloadExecutor = Executors.newFixedThreadPool(4);
+
+    private void showSystemNotificationDirect(String title, String message, int progress, int max, boolean isCompleted) {
+        try {
+            ensureNotificationChannel();
+            NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager == null) return;
+
+            int appIcon = isCompleted ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_sys_download;
+
+            Intent openAppIntent = new Intent(getContext(), MainActivity.class);
+            openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
+                getContext(), 0, openAppIntent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT : android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            );
+
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(getContext(), CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setSmallIcon(appIcon)
+                .setContentIntent(pendingIntent)
+                .setOngoing(!isCompleted)
+                .setAutoCancel(isCompleted)
+                .setOnlyAlertOnce(true)
+                .setPriority(isCompleted ? NotificationCompat.PRIORITY_DEFAULT : NotificationCompat.PRIORITY_LOW);
+
+            if (isCompleted) {
+                builder.setProgress(0, 0, false);
+            } else {
+                builder.setProgress(max, progress, false);
+            }
+
+            manager.notify(NOTIFICATION_ID, builder.build());
+        } catch (Exception ignored) {}
+    }
+
+    private HttpURLConnection connectWithRedirects(String initialUrl, String method, Map<String, String> headers) throws Exception {
+        String currentUrl = initialUrl;
+        int redirectCount = 0;
+        final int MAX_REDIRECTS = 10;
+
+        while (redirectCount < MAX_REDIRECTS) {
+            URL url = new URL(currentUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod(method);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(30000);
+            conn.setInstanceFollowRedirects(false);
+
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            conn.setRequestProperty("Accept", "*/*");
+
+            if (headers != null) {
+                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                    conn.setRequestProperty(entry.getKey(), entry.getValue());
+                }
+            }
+
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP ||
+                code == HttpURLConnection.HTTP_SEE_OTHER || code == 307 || code == 308) {
+                
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location != null && !location.isEmpty()) {
+                    if (location.startsWith("/")) {
+                        URL prevUrl = new URL(currentUrl);
+                        location = prevUrl.getProtocol() + "://" + prevUrl.getHost() + location;
+                    }
+                    currentUrl = location;
+                    method = "GET";
+                    redirectCount++;
+                    continue;
+                }
+            }
+            return conn;
+        }
+        throw new Exception("Too many HTTP redirects");
+    }
+
+    @PluginMethod
+    public void downloadFile(PluginCall call) {
+        String url = call.getString("url");
+        String fileName = call.getString("fileName");
+        String fileType = call.getString("fileType", "video");
+        JSObject headersObj = call.getObject("headers");
+
+        if (url == null || fileName == null) {
+            call.reject("url and fileName are required");
+            return;
+        }
+
+        String overwriteMode = call.getString("overwriteMode", "rename");
+
+        downloadExecutor.execute(() -> {
+            HttpURLConnection conn = null;
+            OutputStream os = null;
+            InputStream is = null;
+            Uri fileUri = null;
+            ContentResolver resolver = getContext().getContentResolver();
+
+            try {
+                String lowerFileName = fileName.toLowerCase();
+                String targetSubFolder;
+                if ("image".equalsIgnoreCase(fileType) || "photo".equalsIgnoreCase(fileType) ||
+                    lowerFileName.endsWith(".jpg") || lowerFileName.endsWith(".jpeg") ||
+                    lowerFileName.endsWith(".png") || lowerFileName.endsWith(".webp")) {
+                    targetSubFolder = "ImageYo";
+                } else if ("audio".equalsIgnoreCase(fileType) || lowerFileName.endsWith(".mp3") ||
+                           lowerFileName.endsWith(".m4a") || lowerFileName.endsWith(".wav") || lowerFileName.endsWith(".flac")) {
+                    targetSubFolder = "AudioYo";
+                } else {
+                    targetSubFolder = "VideoYo";
+                }
+
+                if ("skip".equalsIgnoreCase(overwriteMode)) {
+                    File existing = resolveMediaFile(targetSubFolder, fileName);
+                    if (existing != null && existing.exists()) {
+                        showSystemNotificationDirect("Nimiyo Downloader", "Berkas sudah ada (dilewati): " + existing.getName(), 100, 100, true);
+                        JSObject ret = new JSObject();
+                        ret.put("success", true);
+                        ret.put("skipped", true);
+                        ret.put("fileName", existing.getName());
+                        ret.put("filePath", existing.getAbsolutePath());
+                        ret.put("uri", Uri.fromFile(existing).toString());
+                        ret.put("subFolder", targetSubFolder);
+                        ret.put("size", existing.length());
+                        call.resolve(ret);
+                        return;
+                    }
+                } else if ("overwrite".equalsIgnoreCase(overwriteMode)) {
+                    handleExistingFileForOverwrite(targetSubFolder, fileName);
+                }
+
+                ensureNotificationChannel();
+                showSystemNotificationDirect("Nimiyo Downloader", "Mengunduh " + fileName, 10, 100, false);
+
+                Map<String, String> headers = new HashMap<>();
+                if (headersObj != null) {
+                    Iterator<String> keys = headersObj.keys();
+                    while (keys.hasNext()) {
+                        String k = keys.next();
+                        headers.put(k, headersObj.getString(k));
+                    }
+                }
+
+                if (!headers.containsKey("Referer")) {
+                    if (url.contains("tiktok") || url.contains("snaptik") || url.contains("tikwm")) {
+                        headers.put("Referer", "https://www.tiktok.com/");
+                    } else if (url.contains("instagram") || url.contains("cdninstagram")) {
+                        headers.put("Referer", "https://www.instagram.com/");
+                    } else if (url.contains("spotidown") || url.contains("spotify")) {
+                        headers.put("Referer", "https://spotidown.app/");
+                    }
+                }
+
+                conn = connectWithRedirects(url, "GET", headers);
+                int responseCode = conn.getResponseCode();
+                if (responseCode >= 400) {
+                    throw new Exception("Server returned HTTP " + responseCode);
+                }
+
+                long contentLength = conn.getContentLengthLong();
+                is = conn.getInputStream();
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+
+                String subFolder = targetSubFolder;
+                String mime;
+
+                if ("image".equalsIgnoreCase(fileType) || "photo".equalsIgnoreCase(fileType) ||
+                    lowerFileName.endsWith(".jpg") || lowerFileName.endsWith(".jpeg") ||
+                    lowerFileName.endsWith(".png") || lowerFileName.endsWith(".webp")) {
+                    mime = "image/jpeg";
+                    if (lowerFileName.endsWith(".png")) mime = "image/png";
+                    else if (lowerFileName.endsWith(".webp")) mime = "image/webp";
+                } else if ("audio".equalsIgnoreCase(fileType) || lowerFileName.endsWith(".mp3") ||
+                           lowerFileName.endsWith(".m4a") || lowerFileName.endsWith(".wav") || lowerFileName.endsWith(".flac")) {
+                    mime = "audio/mpeg";
+                    if (lowerFileName.endsWith(".m4a")) mime = "audio/mp4";
+                    else if (lowerFileName.endsWith(".wav")) mime = "audio/wav";
+                    else if (lowerFileName.endsWith(".flac")) mime = "audio/flac";
+                } else {
+                    mime = "video/mp4";
+                    if (lowerFileName.endsWith(".webm")) mime = "video/webm";
+                    else if (lowerFileName.endsWith(".mov")) mime = "video/quicktime";
+                }
+
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+
+                Uri collectionUri;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                    collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                } else {
+                    File publicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder);
+                    if (!publicDir.exists()) {
+                        publicDir.mkdirs();
+                    }
+                    collectionUri = MediaStore.Files.getContentUri("external");
+                }
+
+                fileUri = resolver.insert(collectionUri, values);
+                if (fileUri == null) {
+                    throw new Exception("Failed to create MediaStore entry in Downloads/Nimiyo/" + subFolder);
+                }
+
+                os = resolver.openOutputStream(fileUri);
+                if (os == null) {
+                    throw new Exception("Failed to open output stream for MediaStore URI");
+                }
+
+                byte[] buf = new byte[8192];
+                int len;
+                long totalDownloaded = 0;
+                long lastProgressTime = 0;
+
+                while ((len = is.read(buf)) != -1) {
+                    os.write(buf, 0, len);
+                    totalDownloaded += len;
+
+                    long now = System.currentTimeMillis();
+                    if (contentLength > 0 && (now - lastProgressTime > 400)) {
+                        lastProgressTime = now;
+                        int percent = (int) Math.min((totalDownloaded * 100) / contentLength, 99);
+                        showSystemNotificationDirect("Nimiyo Downloader", "Mengunduh " + fileName + " (" + percent + "%)", percent, 100, false);
+                    }
+                }
+                os.flush();
+
+                String actualFileName = fileName;
+                String actualFilePath = null;
+                try (Cursor cursor = resolver.query(fileUri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA}, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                        if (nameIdx != -1) {
+                            String dName = cursor.getString(nameIdx);
+                            if (dName != null && !dName.isEmpty()) {
+                                actualFileName = dName;
+                            }
+                        }
+                        int dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
+                        if (dataIdx != -1) {
+                            actualFilePath = cursor.getString(dataIdx);
+                        }
+                    }
+                } catch (Exception ignored) {}
+
+                showSystemNotificationDirect("Nimiyo Downloader", "Selesai: " + actualFileName, 100, 100, true);
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("uri", fileUri.toString());
+                ret.put("fileName", actualFileName);
+                if (actualFilePath != null) {
+                    ret.put("filePath", actualFilePath);
+                }
+                ret.put("subFolder", subFolder);
+                ret.put("size", totalDownloaded);
+                call.resolve(ret);
+
+            } catch (Exception e) {
+                if (fileUri != null) {
+                    try { resolver.delete(fileUri, null, null); } catch (Exception ignored) {}
+                }
+                showSystemNotificationDirect("Nimiyo Downloader", "Gagal mengunduh " + fileName, 0, 0, true);
+                call.reject("Download failed: " + e.getMessage());
+            } finally {
+                try { if (is != null) is.close(); } catch (Exception ignored) {}
+                try { if (os != null) os.close(); } catch (Exception ignored) {}
+                try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
+            }
+        });
     }
 
     @PluginMethod
@@ -174,6 +697,25 @@ public class MediaSaverPlugin extends Plugin {
                 mime = "application/octet-stream";
             }
 
+            String overwriteMode = call.getString("overwriteMode", "rename");
+            if ("skip".equalsIgnoreCase(overwriteMode)) {
+                File existing = resolveMediaFile(subFolder, fileName);
+                if (existing != null && existing.exists()) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("skipped", true);
+                    ret.put("fileName", existing.getName());
+                    ret.put("filePath", existing.getAbsolutePath());
+                    ret.put("uri", Uri.fromFile(existing).toString());
+                    ret.put("subFolder", subFolder);
+                    ret.put("size", existing.length());
+                    call.resolve(ret);
+                    return;
+                }
+            } else if ("overwrite".equalsIgnoreCase(overwriteMode)) {
+                handleExistingFileForOverwrite(subFolder, fileName);
+            }
+
             values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
             
             Uri collectionUri;
@@ -204,9 +746,31 @@ public class MediaSaverPlugin extends Plugin {
             fis.close();
             os.close();
 
+            String actualFileName = fileName;
+            String actualFilePath = null;
+            try (Cursor cursor = resolver.query(fileUri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA}, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                    if (nameIdx != -1) {
+                        String dName = cursor.getString(nameIdx);
+                        if (dName != null && !dName.isEmpty()) {
+                            actualFileName = dName;
+                        }
+                    }
+                    int dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
+                    if (dataIdx != -1) {
+                        actualFilePath = cursor.getString(dataIdx);
+                    }
+                }
+            } catch (Exception ignored) {}
+
             JSObject ret = new JSObject();
             ret.put("success", true);
             ret.put("uri", fileUri.toString());
+            ret.put("fileName", actualFileName);
+            if (actualFilePath != null) {
+                ret.put("filePath", actualFilePath);
+            }
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Failed to save media: " + e.getMessage());
@@ -311,11 +875,107 @@ public class MediaSaverPlugin extends Plugin {
         call.resolve(new JSObject().put("success", false).put("message", "Target: " + dirPath));
     }
 
+    private File resolveMediaFile(String subFolder, String fileName) {
+        if (fileName == null || fileName.trim().isEmpty()) return null;
+
+        File publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+
+        // 1. Direct candidate paths
+        File[] exactCandidates = new File[]{
+            new File(publicDownloads, "Nimiyo/" + subFolder + "/" + fileName),
+            new File(publicDownloads, "Nimiyo/" + fileName),
+            new File(publicDownloads, subFolder + "/" + fileName),
+            new File(publicDownloads, fileName)
+        };
+        for (File f : exactCandidates) {
+            if (f.exists() && f.isFile()) {
+                return f;
+            }
+        }
+
+        // 2. Directories to inspect for fuzzy matching
+        File[] dirsToScan = new File[]{
+            new File(publicDownloads, "Nimiyo/" + subFolder),
+            new File(publicDownloads, "Nimiyo"),
+            new File(publicDownloads, subFolder),
+            publicDownloads
+        };
+
+        // Separate stem and extension
+        String ext = "";
+        String stem = fileName;
+        int dotIdx = fileName.lastIndexOf('.');
+        if (dotIdx > 0) {
+            ext = fileName.substring(dotIdx);
+            stem = fileName.substring(0, dotIdx);
+        }
+        // Remove trailing " (1)", " (2)", etc. from stem to get canonical base name
+        String rootStem = stem.replaceAll("\\s*\\(\\d+\\)$", "").trim();
+        String cleanRoot = rootStem.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+
+        for (File dir : dirsToScan) {
+            if (dir.exists() && dir.isDirectory()) {
+                File[] files = dir.listFiles();
+                if (files != null && files.length > 0) {
+                    File newestMatch = null;
+                    long newestTime = -1;
+
+                    for (File f : files) {
+                        if (!f.isFile()) continue;
+                        String fName = f.getName();
+
+                        boolean matches = false;
+                        if (fName.equalsIgnoreCase(fileName)) {
+                            matches = true;
+                        } else if (fName.startsWith(rootStem) && (ext.isEmpty() || fName.toLowerCase().endsWith(ext.toLowerCase()))) {
+                            matches = true;
+                        } else if (!cleanRoot.isEmpty()) {
+                            String cleanName = fName.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+                            if (cleanName.contains(cleanRoot) && (ext.isEmpty() || fName.toLowerCase().endsWith(ext.toLowerCase()))) {
+                                matches = true;
+                            }
+                        }
+
+                        if (matches) {
+                            if (f.lastModified() > newestTime) {
+                                newestTime = f.lastModified();
+                                newestMatch = f;
+                            }
+                        }
+                    }
+
+                    if (newestMatch != null) {
+                        return newestMatch;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private void handleExistingFileForOverwrite(String subFolder, String fileName) {
+        try {
+            File existing = resolveMediaFile(subFolder, fileName);
+            if (existing != null && existing.exists()) {
+                existing.delete();
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentResolver resolver = getContext().getContentResolver();
+                Uri queryUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                String selection = MediaStore.MediaColumns.DISPLAY_NAME + " = ? AND " +
+                                   MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?";
+                String[] args = new String[]{fileName, "%Nimiyo/" + subFolder + "%"};
+                resolver.delete(queryUri, selection, args);
+            }
+        } catch (Exception ignored) {}
+    }
+
     @PluginMethod
-    public void openMediaFile(PluginCall call) {
+    public void playVideoInApp(PluginCall call) {
         String fileName = call.getString("fileName");
         String subFolder = call.getString("subFolder", "VideoYo");
-        String fileType = call.getString("fileType", "video");
+        String title = call.getString("title", "");
 
         if (fileName == null) {
             call.reject("fileName is required");
@@ -324,19 +984,242 @@ public class MediaSaverPlugin extends Plugin {
 
         try {
             Context context = getContext();
-            File mediaFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder + "/" + fileName);
-            
-            if (!mediaFile.exists()) {
-                File f1 = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + fileName);
-                File f2 = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), subFolder + "/" + fileName);
-                File f3 = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName);
-                if (f1.exists()) mediaFile = f1;
-                else if (f2.exists()) mediaFile = f2;
-                else if (f3.exists()) mediaFile = f3;
+            File mediaFile = resolveMediaFile(subFolder, fileName);
+
+            if (mediaFile == null || !mediaFile.exists()) {
+                call.reject("Media file not found on storage: " + fileName);
+                return;
             }
 
-            if (!mediaFile.exists()) {
+            Intent intent = new Intent(context, VideoPlayerActivity.class);
+            intent.putExtra(VideoPlayerActivity.EXTRA_FILE_PATH, mediaFile.getAbsolutePath());
+            if (title != null && !title.trim().isEmpty()) {
+                intent.putExtra(VideoPlayerActivity.EXTRA_TITLE, title);
+            } else {
+                intent.putExtra(VideoPlayerActivity.EXTRA_TITLE, mediaFile.getName());
+            }
+            boolean autoPlay = call.getBoolean("autoPlay", true);
+            boolean autoLoop = call.getBoolean("autoLoop", true);
+            intent.putExtra(VideoPlayerActivity.EXTRA_AUTO_PLAY, autoPlay);
+            intent.putExtra(VideoPlayerActivity.EXTRA_AUTO_LOOP, autoLoop);
+
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("fileName", mediaFile.getName());
+            ret.put("filePath", mediaFile.getAbsolutePath());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to launch video player: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void setKeepAwake(PluginCall call) {
+        boolean enabled = call.getBoolean("enabled", false);
+        getActivity().runOnUiThread(() -> {
+            try {
+                if (enabled) {
+                    getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+                call.resolve();
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void previewImageInApp(PluginCall call) {
+        String fileName = call.getString("fileName");
+        String subFolder = call.getString("subFolder", "ImageYo");
+        String title = call.getString("title", "");
+
+        if (fileName == null) {
+            call.reject("fileName is required");
+            return;
+        }
+
+        try {
+            Context context = getContext();
+            File mediaFile = resolveMediaFile(subFolder, fileName);
+
+            if (mediaFile == null || !mediaFile.exists()) {
                 call.reject("Media file not found on storage: " + fileName);
+                return;
+            }
+
+            Intent intent = new Intent(context, ImageViewerActivity.class);
+            intent.putExtra(ImageViewerActivity.EXTRA_FILE_PATH, mediaFile.getAbsolutePath());
+            if (title != null && !title.trim().isEmpty()) {
+                intent.putExtra(ImageViewerActivity.EXTRA_TITLE, title);
+            } else {
+                intent.putExtra(ImageViewerActivity.EXTRA_TITLE, mediaFile.getName());
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("fileName", mediaFile.getName());
+            ret.put("filePath", mediaFile.getAbsolutePath());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to launch photo preview: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getVideoThumbnail(PluginCall call) {
+        String fileName = call.getString("fileName");
+        String subFolder = call.getString("subFolder", "VideoYo");
+
+        if (fileName == null) {
+            call.reject("fileName is required");
+            return;
+        }
+
+        Context context = getContext();
+        File thumbDir = new File(context.getCacheDir(), "thumbnails");
+        if (!thumbDir.exists()) {
+            thumbDir.mkdirs();
+        }
+        String safeName = "thumb_" + Math.abs(fileName.hashCode()) + ".jpg";
+        File cachedThumb = new File(thumbDir, safeName);
+        if (cachedThumb.exists() && cachedThumb.length() > 0) {
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("filePath", cachedThumb.getAbsolutePath());
+            call.resolve(ret);
+            return;
+        }
+
+        File videoFile = resolveMediaFile(subFolder, fileName);
+        if (videoFile == null || !videoFile.exists()) {
+            call.reject("Video file not found: " + fileName);
+            return;
+        }
+
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(videoFile.getAbsolutePath());
+            Bitmap frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            if (frame == null) {
+                frame = retriever.getFrameAtTime();
+            }
+
+            if (frame == null) {
+                call.reject("Could not extract frame from video");
+                return;
+            }
+
+            int maxDim = 320;
+            int width = frame.getWidth();
+            int height = frame.getHeight();
+            Bitmap scaled = frame;
+            if (width > maxDim || height > maxDim) {
+                float ratio = Math.min((float) maxDim / width, (float) maxDim / height);
+                int newWidth = Math.max(1, Math.round(width * ratio));
+                int newHeight = Math.max(1, Math.round(height * ratio));
+                scaled = Bitmap.createScaledBitmap(frame, newWidth, newHeight, true);
+            }
+
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(cachedThumb)) {
+                scaled.compress(Bitmap.CompressFormat.JPEG, 80, fos);
+                fos.flush();
+            }
+
+            if (scaled != frame && !frame.isRecycled()) {
+                frame.recycle();
+            }
+            if (!scaled.isRecycled()) {
+                scaled.recycle();
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("filePath", cachedThumb.getAbsolutePath());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to generate video thumbnail: " + e.getMessage());
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @PluginMethod
+    public void openMediaFile(PluginCall call) {
+        String fileName = call.getString("fileName");
+        String subFolder = call.getString("subFolder", "VideoYo");
+        String fileType = call.getString("fileType", "video");
+        String title = call.getString("title", "");
+        boolean forceExternal = call.getBoolean("forceExternal", false);
+
+        if (fileName == null) {
+            call.reject("fileName is required");
+            return;
+        }
+
+        try {
+            Context context = getContext();
+            File mediaFile = resolveMediaFile(subFolder, fileName);
+
+            if (mediaFile == null || !mediaFile.exists()) {
+                call.reject("Media file not found on storage: " + fileName);
+                return;
+            }
+
+            boolean isVideo = "video".equalsIgnoreCase(fileType) ||
+                fileName.endsWith(".mp4") || fileName.endsWith(".webm") ||
+                fileName.endsWith(".mov") || fileName.endsWith(".mkv");
+
+            // Open in dedicated in-app player if it's video and not forced to external
+            if (isVideo && !forceExternal) {
+                Intent playerIntent = new Intent(context, VideoPlayerActivity.class);
+                playerIntent.putExtra(VideoPlayerActivity.EXTRA_FILE_PATH, mediaFile.getAbsolutePath());
+                if (title != null && !title.trim().isEmpty()) {
+                    playerIntent.putExtra(VideoPlayerActivity.EXTRA_TITLE, title);
+                } else {
+                    playerIntent.putExtra(VideoPlayerActivity.EXTRA_TITLE, mediaFile.getName());
+                }
+                playerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(playerIntent);
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("fileName", mediaFile.getName());
+                ret.put("filePath", mediaFile.getAbsolutePath());
+                call.resolve(ret);
+                return;
+            }
+
+            boolean isImage = "image".equalsIgnoreCase(fileType) ||
+                fileName.endsWith(".png") || fileName.endsWith(".jpg") ||
+                fileName.endsWith(".jpeg") || fileName.endsWith(".webp");
+
+            // Open in dedicated in-app photo viewer if it's image and not forced to external
+            if (isImage && !forceExternal) {
+                Intent imageIntent = new Intent(context, ImageViewerActivity.class);
+                imageIntent.putExtra(ImageViewerActivity.EXTRA_FILE_PATH, mediaFile.getAbsolutePath());
+                if (title != null && !title.trim().isEmpty()) {
+                    imageIntent.putExtra(ImageViewerActivity.EXTRA_TITLE, title);
+                } else {
+                    imageIntent.putExtra(ImageViewerActivity.EXTRA_TITLE, mediaFile.getName());
+                }
+                imageIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(imageIntent);
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("fileName", mediaFile.getName());
+                ret.put("filePath", mediaFile.getAbsolutePath());
+                call.resolve(ret);
                 return;
             }
 
@@ -356,13 +1239,15 @@ public class MediaSaverPlugin extends Plugin {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(contentUri, mime);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-            
-            Intent chooser = Intent.createChooser(intent, "Play " + fileName);
+
+            Intent chooser = Intent.createChooser(intent, "Play " + mediaFile.getName());
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(chooser);
 
             JSObject ret = new JSObject();
             ret.put("success", true);
+            ret.put("fileName", mediaFile.getName());
+            ret.put("filePath", mediaFile.getAbsolutePath());
             ret.put("uri", contentUri.toString());
             call.resolve(ret);
         } catch (Exception e) {
@@ -383,18 +1268,9 @@ public class MediaSaverPlugin extends Plugin {
 
         try {
             Context context = getContext();
-            File mediaFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder + "/" + fileName);
-            
-            if (!mediaFile.exists()) {
-                File f1 = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + fileName);
-                File f2 = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), subFolder + "/" + fileName);
-                File f3 = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName);
-                if (f1.exists()) mediaFile = f1;
-                else if (f2.exists()) mediaFile = f2;
-                else if (f3.exists()) mediaFile = f3;
-            }
+            File mediaFile = resolveMediaFile(subFolder, fileName);
 
-            if (!mediaFile.exists()) {
+            if (mediaFile == null || !mediaFile.exists()) {
                 call.reject("File not found on storage: " + fileName);
                 return;
             }
@@ -407,15 +1283,17 @@ public class MediaSaverPlugin extends Plugin {
 
             JSObject ret = new JSObject();
             ret.put("success", true);
-            ret.put("uri", contentUri.toString());
+            ret.put("fileName", mediaFile.getName());
+            ret.put("filePath", mediaFile.getAbsolutePath());
             ret.put("fileUri", Uri.fromFile(mediaFile).toString());
+            ret.put("uri", contentUri.toString());
             ret.put("length", mediaFile.length());
 
-            if (mediaFile.length() <= 20 * 1024 * 1024) {
+            if ("image".equalsIgnoreCase(fileType) && mediaFile.length() <= 2 * 1024 * 1024) {
                 byte[] bytes = new byte[(int) mediaFile.length()];
-                FileInputStream fis = new FileInputStream(mediaFile);
-                fis.read(bytes);
-                fis.close();
+                try (FileInputStream fis = new FileInputStream(mediaFile)) {
+                    fis.read(bytes);
+                }
                 String base64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
                 ret.put("base64", base64);
             }
@@ -516,4 +1394,1005 @@ public class MediaSaverPlugin extends Plugin {
             call.reject("Failed to trigger APK install: " + e.getMessage());
         }
     }
+
+    @PluginMethod
+    public void readClipboard(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null && clipboard.hasPrimaryClip()) {
+                    ClipData clip = clipboard.getPrimaryClip();
+                    if (clip != null && clip.getItemCount() > 0) {
+                        CharSequence text = clip.getItemAt(0).coerceToText(getContext());
+                        JSObject ret = new JSObject();
+                        ret.put("value", text != null ? text.toString() : "");
+                        call.resolve(ret);
+                        return;
+                    }
+                }
+                JSObject ret = new JSObject();
+                ret.put("value", "");
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Failed to read clipboard: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void setClipboard(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                String text = call.getString("value", "");
+                ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    ClipData clip = ClipData.newPlainText("text", text != null ? text : "");
+                    clipboard.setPrimaryClip(clip);
+                }
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Failed to set clipboard: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void getAudioPermissionStatus(PluginCall call) {
+        Context context = getContext();
+        boolean granted;
+        if (Build.VERSION.SDK_INT >= 33) {
+            granted = context.checkSelfPermission(android.Manifest.permission.READ_MEDIA_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        } else {
+            granted = context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        ret.put("status", granted ? "granted" : "denied");
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void checkAndRequestAudioPermission(PluginCall call) {
+        if (getActivity() == null) {
+            call.resolve(new JSObject().put("granted", false).put("status", "denied"));
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (getActivity().checkSelfPermission(android.Manifest.permission.READ_MEDIA_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                call.resolve(new JSObject().put("granted", true).put("status", "granted"));
+            } else {
+                getActivity().runOnUiThread(() -> {
+                    getActivity().requestPermissions(new String[]{android.Manifest.permission.READ_MEDIA_AUDIO}, 102);
+                });
+                call.resolve(new JSObject().put("granted", false).put("status", "requested"));
+            }
+        } else {
+            if (getActivity().checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                call.resolve(new JSObject().put("granted", true).put("status", "granted"));
+            } else {
+                getActivity().runOnUiThread(() -> {
+                    getActivity().requestPermissions(new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, 102);
+                });
+                call.resolve(new JSObject().put("granted", false).put("status", "requested"));
+            }
+        }
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) {
+            call.reject("Failed to open app settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void checkManageStoragePermission(PluginCall call) {
+        boolean granted = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            granted = Environment.isExternalStorageManager();
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestManageStoragePermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                call.resolve(new JSObject().put("success", true));
+                return;
+            } catch (Exception e) {
+                try {
+                    Intent fallback = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(fallback);
+                    call.resolve(new JSObject().put("success", true));
+                    return;
+                } catch (Exception e2) {
+                    call.reject("Failed to open storage settings: " + e2.getMessage());
+                    return;
+                }
+            }
+        }
+        call.resolve(new JSObject().put("success", true));
+    }
+
+    @PluginMethod
+    public void scanAudioLibrary(PluginCall call) {
+        downloadExecutor.execute(() -> {
+            try {
+                Context context = getContext();
+                ContentResolver resolver = context.getContentResolver();
+                JSArray trackList = new JSArray();
+                HashSet<String> seenPaths = new HashSet<>();
+
+                // 1. Direct scan NIMIYO downloads directories (Download/Nimiyo/AudioYo, Download/Nimiyo/audio, Download/Nimiyo)
+                File[] nimiyoDirs = new File[] {
+                    new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/AudioYo"),
+                    new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/audio"),
+                    new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo")
+                };
+
+                for (File dir : nimiyoDirs) {
+                    if (dir.exists() && dir.isDirectory()) {
+                        File[] files = dir.listFiles();
+                        if (files != null) {
+                            for (File f : files) {
+                                if (f.isFile() && isSupportedAudioFile(f.getName())) {
+                                    String absPath = f.getAbsolutePath();
+                                    if (seenPaths.add(absPath.toLowerCase())) {
+                                        JSObject trk = extractFileMetadata(f, true);
+                                        if (trk != null) trackList.put(trk);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Query MediaStore for system-wide audio files
+                String[] projection = new String[] {
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.DURATION,
+                    MediaStore.Audio.Media.DATA,
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                    MediaStore.Audio.Media.TRACK,
+                    MediaStore.Audio.Media.YEAR,
+                    MediaStore.Audio.Media.MIME_TYPE,
+                    MediaStore.Audio.Media.SIZE
+                };
+
+                String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0 OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.mp3' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.m4a' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.flac' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.wav' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.ogg' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.opus' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.aac' OR " +
+                                   MediaStore.Audio.Media.DATA + " LIKE '%.wma'";
+
+                try (android.database.Cursor cursor = resolver.query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    null,
+                    MediaStore.Audio.Media.TITLE + " ASC"
+                )) {
+                    if (cursor != null) {
+                        int idIdx = cursor.getColumnIndex(MediaStore.Audio.Media._ID);
+                        int titleIdx = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE);
+                        int artistIdx = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST);
+                        int albumIdx = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM);
+                        int durIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION);
+                        int dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA);
+                        int nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
+                        int trackIdx = cursor.getColumnIndex(MediaStore.Audio.Media.TRACK);
+                        int yearIdx = cursor.getColumnIndex(MediaStore.Audio.Media.YEAR);
+                        int mimeIdx = cursor.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE);
+                        int sizeIdx = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE);
+
+                        while (cursor.moveToNext()) {
+                            long id = idIdx >= 0 ? cursor.getLong(idIdx) : 0;
+                            String data = dataIdx >= 0 ? cursor.getString(dataIdx) : "";
+                            if (data == null) data = "";
+
+                            if (!data.isEmpty() && !seenPaths.add(data.toLowerCase())) {
+                                continue;
+                            }
+
+                            String title = titleIdx >= 0 ? cursor.getString(titleIdx) : "";
+                            String artist = artistIdx >= 0 ? cursor.getString(artistIdx) : "";
+                            String album = albumIdx >= 0 ? cursor.getString(albumIdx) : "";
+                            long duration = durIdx >= 0 ? cursor.getLong(durIdx) : 0;
+                            String displayName = nameIdx >= 0 ? cursor.getString(nameIdx) : "";
+                            int trackNum = trackIdx >= 0 ? cursor.getInt(trackIdx) : 0;
+                            int year = yearIdx >= 0 ? cursor.getInt(yearIdx) : 0;
+                            String mime = mimeIdx >= 0 ? cursor.getString(mimeIdx) : "audio/mpeg";
+                            long size = sizeIdx >= 0 ? cursor.getLong(sizeIdx) : 0;
+
+                            if (displayName == null || displayName.isEmpty()) {
+                                displayName = new File(data).getName();
+                            }
+                            if (title == null || title.isEmpty() || title.equals("<unknown>")) {
+                                title = displayName.replaceFirst("[.][^.]+$", "");
+                            }
+                            if (artist == null || artist.equals("<unknown>")) artist = "";
+                            if (album == null || album.equals("<unknown>")) album = "";
+
+                            boolean isNimiyo = data.toLowerCase().contains("nimiyo");
+                            Uri contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
+
+                            // Check companion LRC file
+                            boolean hasLyrics = false;
+                            if (!data.isEmpty()) {
+                                String lrcPath = data.replaceFirst("[.][^.]+$", ".lrc");
+                                if (new File(lrcPath).exists()) {
+                                    hasLyrics = true;
+                                }
+                            }
+
+                            JSObject trk = new JSObject();
+                            trk.put("id", "ms_" + id);
+                            trk.put("title", title);
+                            trk.put("artist", artist);
+                            trk.put("album", album);
+                            trk.put("albumArtist", artist);
+                            trk.put("duration", duration);
+                            trk.put("trackNumber", trackNum);
+                            trk.put("year", year);
+                            trk.put("filePath", data);
+                            trk.put("contentUri", contentUri.toString());
+                            trk.put("fileName", displayName);
+                            trk.put("mimeType", mime);
+                            trk.put("size", size);
+                            trk.put("isNimiyo", isNimiyo);
+                            trk.put("hasArtwork", true);
+                            trk.put("hasLyrics", hasLyrics);
+
+                            trackList.put(trk);
+                        }
+                    }
+                }
+
+                JSObject ret = new JSObject();
+                ret.put("tracks", trackList);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Failed to scan audio library: " + e.getMessage());
+            }
+        });
+    }
+
+    private boolean isSupportedAudioFile(String name) {
+        if (name == null) return false;
+        String lower = name.toLowerCase();
+        return lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".aac") ||
+               lower.endsWith(".flac") || lower.endsWith(".wav") || lower.endsWith(".ogg") ||
+               lower.endsWith(".opus") || lower.endsWith(".wma");
+    }
+
+    private JSObject extractFileMetadata(File f, boolean isNimiyo) {
+        try {
+            MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+            mmr.setDataSource(f.getAbsolutePath());
+
+            String title = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+            String artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+            String album = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+            String albumArtist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST);
+            String durStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            String trackStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER);
+            String yearStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR);
+            String mime = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
+
+            long duration = 0;
+            if (durStr != null) {
+                try { duration = Long.parseLong(durStr); } catch (Exception ignored) {}
+            }
+            int trackNum = 0;
+            if (trackStr != null) {
+                try {
+                    String clean = trackStr.split("/")[0];
+                    trackNum = Integer.parseInt(clean.trim());
+                } catch (Exception ignored) {}
+            }
+            int year = 0;
+            if (yearStr != null) {
+                try { year = Integer.parseInt(yearStr.trim()); } catch (Exception ignored) {}
+            }
+
+            if (title == null || title.isEmpty()) {
+                title = f.getName().replaceFirst("[.][^.]+$", "");
+            }
+            if (artist == null) artist = "";
+            if (album == null) album = "";
+            if (albumArtist == null || albumArtist.isEmpty()) albumArtist = artist;
+            if (mime == null) mime = "audio/mpeg";
+
+            boolean hasLyrics = false;
+            String lrcPath = f.getAbsolutePath().replaceFirst("[.][^.]+$", ".lrc");
+            if (new File(lrcPath).exists()) {
+                hasLyrics = true;
+            }
+
+            byte[] pic = mmr.getEmbeddedPicture();
+            boolean hasArtwork = (pic != null && pic.length > 0);
+
+            try { mmr.release(); } catch (Exception ignored) {}
+
+            JSObject trk = new JSObject();
+            trk.put("id", "file_" + Math.abs(f.getAbsolutePath().hashCode()));
+            trk.put("title", title);
+            trk.put("artist", artist);
+            trk.put("album", album);
+            trk.put("albumArtist", albumArtist);
+            trk.put("duration", duration);
+            trk.put("trackNumber", trackNum);
+            trk.put("year", year);
+            Uri itemContentUri = Uri.fromFile(f);
+            try {
+                Context ctx = getContext();
+                if (ctx != null) {
+                    ContentResolver cr = ctx.getContentResolver();
+                    try (Cursor c = cr.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            new String[]{MediaStore.Audio.Media._ID},
+                            MediaStore.Audio.Media.DATA + " = ?", new String[]{f.getAbsolutePath()}, null)) {
+                        if (c != null && c.moveToFirst()) {
+                            long rowId = c.getLong(0);
+                            itemContentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, rowId);
+                        }
+                    }
+                    if (itemContentUri.toString().startsWith("file://") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        try (Cursor c = cr.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                new String[]{MediaStore.MediaColumns._ID},
+                                MediaStore.MediaColumns.DATA + " = ?", new String[]{f.getAbsolutePath()}, null)) {
+                            if (c != null && c.moveToFirst()) {
+                                long rowId = c.getLong(0);
+                                itemContentUri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, rowId);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            trk.put("filePath", f.getAbsolutePath());
+            trk.put("contentUri", itemContentUri.toString());
+            trk.put("fileName", f.getName());
+            trk.put("mimeType", mime);
+            trk.put("size", f.length());
+            trk.put("isNimiyo", isNimiyo);
+            trk.put("hasArtwork", hasArtwork);
+            trk.put("hasLyrics", hasLyrics);
+
+            return trk;
+        } catch (Exception e) {
+            JSObject trk = new JSObject();
+            trk.put("id", "file_" + Math.abs(f.getAbsolutePath().hashCode()));
+            trk.put("title", f.getName().replaceFirst("[.][^.]+$", ""));
+            trk.put("artist", "");
+            trk.put("album", "");
+            trk.put("albumArtist", "");
+            trk.put("duration", 0);
+            trk.put("trackNumber", 0);
+            trk.put("year", 0);
+            trk.put("filePath", f.getAbsolutePath());
+            trk.put("contentUri", Uri.fromFile(f).toString());
+            trk.put("fileName", f.getName());
+            trk.put("mimeType", "audio/mpeg");
+            trk.put("size", f.length());
+            trk.put("isNimiyo", isNimiyo);
+            trk.put("hasArtwork", false);
+            trk.put("hasLyrics", false);
+            return trk;
+        }
+    }
+
+    @PluginMethod
+    public void getAudioArtwork(PluginCall call) {
+        String filePath = call.getString("filePath");
+        String contentUriStr = call.getString("contentUri");
+
+        downloadExecutor.execute(() -> {
+            MediaMetadataRetriever mmr = null;
+            try {
+                byte[] picture = null;
+                if (filePath != null && !filePath.isEmpty()) {
+                    File file = new File(filePath);
+                    if (file.exists()) {
+                        mmr = new MediaMetadataRetriever();
+                        mmr.setDataSource(file.getAbsolutePath());
+                        picture = mmr.getEmbeddedPicture();
+                    }
+                }
+
+                if (picture == null && contentUriStr != null && !contentUriStr.isEmpty()) {
+                    try {
+                        Uri uri = Uri.parse(contentUriStr);
+                        if (mmr == null) mmr = new MediaMetadataRetriever();
+                        mmr.setDataSource(getContext(), uri);
+                        picture = mmr.getEmbeddedPicture();
+                    } catch (Exception ignored) {}
+                }
+
+                if (picture != null && picture.length > 0) {
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(picture, 0, picture.length);
+                    if (bitmap != null) {
+                        int maxDim = 512;
+                        if (bitmap.getWidth() > maxDim || bitmap.getHeight() > maxDim) {
+                            float scale = Math.min((float) maxDim / bitmap.getWidth(), (float) maxDim / bitmap.getHeight());
+                            int targetW = Math.round(bitmap.getWidth() * scale);
+                            int targetH = Math.round(bitmap.getHeight() * scale);
+                            Bitmap scaled = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true);
+                            if (scaled != bitmap) bitmap.recycle();
+                            bitmap = scaled;
+                        }
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos);
+                        byte[] compressed = baos.toByteArray();
+                        bitmap.recycle();
+                        String base64 = Base64.encodeToString(compressed, Base64.NO_WRAP);
+                        JSObject ret = new JSObject();
+                        ret.put("hasArtwork", true);
+                        ret.put("artwork", "data:image/jpeg;base64," + base64);
+                        call.resolve(ret);
+                        return;
+                    }
+                }
+
+                call.resolve(new JSObject().put("hasArtwork", false));
+            } catch (Exception e) {
+                call.resolve(new JSObject().put("hasArtwork", false));
+            } finally {
+                if (mmr != null) {
+                    try { mmr.release(); } catch (Exception ignored) {}
+                }
+            }
+        });
+    }
+
+    @PluginMethod
+    public void getAudioLyrics(PluginCall call) {
+        String filePath = call.getString("filePath");
+        downloadExecutor.execute(() -> {
+            try {
+                String lyrics = null;
+
+                if (filePath != null && !filePath.isEmpty()) {
+                    File audioFile = new File(filePath);
+                    if (audioFile.exists() && audioFile.isFile()) {
+                        File parent = audioFile.getParentFile();
+                        String fileName = audioFile.getName();
+                        String baseName = fileName.replaceFirst("[.][^.]+$", "");
+
+                        // 1. Companion .lrc in same directory (case-insensitive search)
+                        File directLrc = new File(parent, baseName + ".lrc");
+                        if (directLrc.exists() && directLrc.isFile()) {
+                            lyrics = readTextFile(directLrc);
+                        }
+
+                        if (lyrics == null && parent != null) {
+                            File directTxt = new File(parent, baseName + ".txt");
+                            if (directTxt.exists() && directTxt.isFile()) {
+                                lyrics = readTextFile(directTxt);
+                            }
+                        }
+
+                        // Also check case-insensitive match in parent directory
+                        if (lyrics == null && parent != null && parent.isDirectory()) {
+                            File[] siblings = parent.listFiles();
+                            if (siblings != null) {
+                                for (File sibling : siblings) {
+                                    String sName = sibling.getName();
+                                    if (sName.toLowerCase().endsWith(".lrc")) {
+                                        String sBase = sName.substring(0, sName.length() - 4);
+                                        if (sBase.equalsIgnoreCase(baseName) || sBase.equalsIgnoreCase(fileName)) {
+                                            lyrics = readTextFile(sibling);
+                                            if (lyrics != null && !lyrics.trim().isEmpty()) break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Check Nimiyo AudioYo download folder for companion lyrics
+                        if (lyrics == null) {
+                            File nimiyoAudioDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/AudioYo");
+                            if (nimiyoAudioDir.exists() && nimiyoAudioDir.isDirectory()) {
+                                File lrc1 = new File(nimiyoAudioDir, baseName + ".lrc");
+                                if (lrc1.exists() && lrc1.isFile()) {
+                                    lyrics = readTextFile(lrc1);
+                                }
+                            }
+                        }
+
+                        // 3. Extract embedded ID3v2 (USLT/SYLT) / MP4 / Vorbis tags from audio file
+                        if (lyrics == null || lyrics.trim().isEmpty()) {
+                            lyrics = extractEmbeddedLyrics(audioFile);
+                        }
+                    }
+                }
+
+                if (lyrics != null && !lyrics.trim().isEmpty()) {
+                    boolean isSynced = lyrics.contains("[") && lyrics.contains("]") && lyrics.matches("(?s).*\\[\\d{1,2}:\\d{2}.*");
+                    JSObject ret = new JSObject();
+                    ret.put("hasLyrics", true);
+                    ret.put("lyrics", lyrics.trim());
+                    ret.put("isSynced", isSynced);
+                    call.resolve(ret);
+                } else {
+                    JSObject ret = new JSObject();
+                    ret.put("hasLyrics", false);
+                    call.resolve(ret);
+                }
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("hasLyrics", false);
+                call.resolve(ret);
+            }
+        });
+    }
+
+    private String readTextFile(File file) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            String result = sb.toString().trim();
+            return result.isEmpty() ? null : result;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String extractEmbeddedLyrics(File file) {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] header = new byte[10];
+            int read = fis.read(header);
+            if (read < 10) return null;
+
+            // Check ID3v2 header
+            if (header[0] == 'I' && header[1] == 'D' && header[2] == '3') {
+                int version = header[3] & 0xFF;
+                int tagSize = ((header[6] & 0x7F) << 21) |
+                              ((header[7] & 0x7F) << 14) |
+                              ((header[8] & 0x7F) << 7) |
+                              (header[9] & 0x7F);
+
+                if (tagSize > 0 && tagSize < 12 * 1024 * 1024) {
+                    byte[] tagData = new byte[tagSize];
+                    int totalRead = 0;
+                    while (totalRead < tagSize) {
+                        int r = fis.read(tagData, totalRead, tagSize - totalRead);
+                        if (r <= 0) break;
+                        totalRead += r;
+                    }
+                    String lrc = parseId3TagForLyrics(tagData, version);
+                    if (lrc != null && !lrc.trim().isEmpty()) return lrc.trim();
+                }
+            }
+
+            // Raw scan first 512KB for USLT / ©lyr / LYRICS=
+            return searchRawBytesForLyrics(file);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String parseId3TagForLyrics(byte[] data, int version) {
+        int pos = 0;
+        int max = data.length;
+
+        while (pos + 10 < max) {
+            if (data[pos] == 0 && data[pos + 1] == 0) break; // Padding reached
+
+            if (version == 2) { // ID3v2.2: 3-char IDs, 3-byte size
+                if (pos + 6 > max) break;
+                String frameId = new String(data, pos, 3, StandardCharsets.ISO_8859_1);
+                int frameSize = ((data[pos + 3] & 0xFF) << 16) | ((data[pos + 4] & 0xFF) << 8) | (data[pos + 5] & 0xFF);
+                pos += 6;
+                if (pos + frameSize > max || frameSize <= 0) break;
+                if ("ULT".equalsIgnoreCase(frameId) || "SLT".equalsIgnoreCase(frameId)) {
+                    return decodeUsltFrame(data, pos, frameSize);
+                }
+                pos += frameSize;
+            } else { // ID3v2.3 and ID3v2.4: 4-char IDs, 4-byte size, 2-byte flags
+                String frameId = new String(data, pos, 4, StandardCharsets.ISO_8859_1);
+                int frameSize;
+                if (version == 4) { // syncsafe size
+                    frameSize = ((data[pos + 4] & 0x7F) << 21) | ((data[pos + 5] & 0x7F) << 14) |
+                                ((data[pos + 6] & 0x7F) << 7) | (data[pos + 7] & 0x7F);
+                } else {
+                    frameSize = ((data[pos + 4] & 0xFF) << 24) | ((data[pos + 5] & 0xFF) << 16) |
+                                ((data[pos + 6] & 0xFF) << 8) | (data[pos + 7] & 0xFF);
+                }
+                pos += 10;
+                if (frameSize <= 0 || pos + frameSize > max) break;
+                if ("USLT".equalsIgnoreCase(frameId) || "SYLT".equalsIgnoreCase(frameId)) {
+                    return decodeUsltFrame(data, pos, frameSize);
+                }
+                pos += frameSize;
+            }
+        }
+        return null;
+    }
+
+    private String decodeUsltFrame(byte[] data, int start, int length) {
+        try {
+            if (length < 5) return null;
+            int encoding = data[start] & 0xFF;
+            int idx = start + 4; // Skip encoding (1) + language (3)
+            int end = start + length;
+
+            // Skip description string
+            if (encoding == 1 || encoding == 2) { // UTF-16 (double null terminator)
+                while (idx + 1 < end) {
+                    if (data[idx] == 0 && data[idx + 1] == 0) {
+                        idx += 2;
+                        break;
+                    }
+                    idx += 2;
+                }
+            } else { // ISO-8859-1 or UTF-8 (single null terminator)
+                while (idx < end) {
+                    if (data[idx] == 0) {
+                        idx++;
+                        break;
+                    }
+                    idx++;
+                }
+            }
+
+            if (idx >= end) return null;
+            int textLen = end - idx;
+
+            java.nio.charset.Charset cs;
+            if (encoding == 1) cs = StandardCharsets.UTF_16;
+            else if (encoding == 2) cs = StandardCharsets.UTF_16BE;
+            else if (encoding == 3) cs = StandardCharsets.UTF_8;
+            else cs = StandardCharsets.ISO_8859_1;
+
+            return new String(data, idx, textLen, cs).trim();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String searchRawBytesForLyrics(File file) {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            int scanLimit = Math.min((int) file.length(), 512 * 1024);
+            byte[] buf = new byte[scanLimit];
+            int read = fis.read(buf);
+            if (read <= 20) return null;
+
+            // Search for USLT in raw buffer
+            for (int i = 0; i < read - 15; i++) {
+                if (buf[i] == 'U' && buf[i + 1] == 'S' && buf[i + 2] == 'L' && buf[i + 3] == 'T') {
+                    int frameSize = ((buf[i + 4] & 0xFF) << 24) | ((buf[i + 5] & 0xFF) << 16) |
+                                    ((buf[i + 6] & 0xFF) << 8) | (buf[i + 7] & 0xFF);
+                    if (frameSize <= 0 || frameSize > read - (i + 10)) {
+                        frameSize = ((buf[i + 4] & 0x7F) << 21) | ((buf[i + 5] & 0x7F) << 14) |
+                                    ((buf[i + 6] & 0x7F) << 7) | (buf[i + 7] & 0x7F);
+                    }
+                    if (frameSize > 0 && i + 10 + frameSize <= read) {
+                        String lyrics = decodeUsltFrame(buf, i + 10, frameSize);
+                        if (lyrics != null && !lyrics.trim().isEmpty()) return lyrics;
+                    }
+                }
+            }
+
+            // Search for MP4 lyrics atom: ©lyr followed by data atom
+            byte[] lyrPattern = new byte[]{(byte) 0xA9, 'l', 'y', 'r'};
+            for (int i = 0; i < read - 20; i++) {
+                if (buf[i] == lyrPattern[0] && buf[i + 1] == lyrPattern[1] && buf[i + 2] == lyrPattern[2] && buf[i + 3] == lyrPattern[3]) {
+                    // Look for 'data' atom within 24 bytes
+                    for (int j = i + 4; j < Math.min(i + 28, read - 8); j++) {
+                        if (buf[j] == 'd' && buf[j + 1] == 'a' && buf[j + 2] == 't' && buf[j + 3] == 'a') {
+                            int dataLen = ((buf[j - 4] & 0xFF) << 24) | ((buf[j - 3] & 0xFF) << 16) |
+                                          ((buf[j - 2] & 0xFF) << 8) | (buf[j - 1] & 0xFF) - 16;
+                            if (dataLen > 0 && j + 12 + dataLen <= read) {
+                                return new String(buf, j + 12, dataLen, StandardCharsets.UTF_8).trim();
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    @PluginMethod
+    public void shareAudioFile(PluginCall call) {
+        String filePath = call.getString("filePath");
+        String contentUriStr = call.getString("contentUri");
+        String title = call.getString("title", "Audio");
+        String mimeType = call.getString("mimeType", "audio/*");
+
+        try {
+            Uri shareUri = null;
+            if (filePath != null && !filePath.isEmpty()) {
+                File file = new File(filePath);
+                if (file.exists()) {
+                    shareUri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+                }
+            }
+
+            if (shareUri == null && contentUriStr != null && !contentUriStr.isEmpty()) {
+                shareUri = Uri.parse(contentUriStr);
+            }
+
+            if (shareUri == null) {
+                call.reject("Audio file not found for sharing");
+                return;
+            }
+
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType(mimeType);
+            shareIntent.putExtra(Intent.EXTRA_STREAM, shareUri);
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, title);
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            Intent chooser = Intent.createChooser(shareIntent, title);
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) {
+            call.reject("Failed to share audio: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void deleteAudioFile(PluginCall call) {
+        String filePath = call.getString("filePath");
+        String contentUriStr = call.getString("contentUri");
+        String inputFileName = call.getString("fileName");
+        String trackId = call.getString("trackId");
+
+        downloadExecutor.execute(() -> {
+            boolean deleted = false;
+            try {
+                File file = (filePath != null && !filePath.isEmpty()) ? new File(filePath) : null;
+                final String fileName = (inputFileName != null && !inputFileName.isEmpty()) ? inputFileName : (file != null ? file.getName() : null);
+
+                // 1. Direct file deletion (succeeds if app owns file, legacy storage, or MANAGE_EXTERNAL_STORAGE is granted)
+                if (file != null && file.exists()) {
+                    deleted = file.delete();
+                }
+
+                // 2. Delete companion .lrc / .txt files
+                if (filePath != null && !filePath.isEmpty()) {
+                    try {
+                        String lrcPath = filePath.replaceFirst("[.][^.]+$", ".lrc");
+                        File lrcFile = new File(lrcPath);
+                        if (lrcFile.exists()) lrcFile.delete();
+
+                        String txtPath = filePath.replaceFirst("[.][^.]+$", ".txt");
+                        File txtFile = new File(txtPath);
+                        if (txtFile.exists()) txtFile.delete();
+                    } catch (Exception ignored) {}
+                }
+
+                ContentResolver resolver = getContext().getContentResolver();
+
+                // 3. Delete via explicit contentUri if it is a content:// URI
+                if (contentUriStr != null && contentUriStr.startsWith("content://")) {
+                    try {
+                        Uri uri = Uri.parse(contentUriStr);
+                        int rows = resolver.delete(uri, null, null);
+                        if (rows > 0) deleted = true;
+                    } catch (Exception ignored) {}
+                }
+
+                // 4. Delete via MediaStore ID if trackId starts with ms_
+                if (trackId != null && trackId.startsWith("ms_")) {
+                    try {
+                        long msId = Long.parseLong(trackId.substring(3));
+                        Uri msUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, msId);
+                        int rows = resolver.delete(msUri, null, null);
+                        if (rows > 0) deleted = true;
+                    } catch (Exception ignored) {}
+                }
+
+                // 5. Query and delete from MediaStore collections (Downloads, Audio, Files) by DATA column
+                if (filePath != null && !filePath.isEmpty()) {
+                    Uri[] collections;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        collections = new Uri[]{
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            MediaStore.Files.getContentUri("external")
+                        };
+                    } else {
+                        collections = new Uri[]{
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            MediaStore.Files.getContentUri("external")
+                        };
+                    }
+
+                    for (Uri col : collections) {
+                        try {
+                            try (Cursor c = resolver.query(col, new String[]{MediaStore.MediaColumns._ID},
+                                    MediaStore.MediaColumns.DATA + " = ?", new String[]{filePath}, null)) {
+                                if (c != null) {
+                                    while (c.moveToNext()) {
+                                        long rowId = c.getLong(0);
+                                        Uri rowUri = ContentUris.withAppendedId(col, rowId);
+                                        try {
+                                            int rows = resolver.delete(rowUri, null, null);
+                                            if (rows > 0) deleted = true;
+                                        } catch (Exception ignored) {}
+                                    }
+                                }
+                            }
+                            int rows = resolver.delete(col, MediaStore.MediaColumns.DATA + " = ?", new String[]{filePath});
+                            if (rows > 0) deleted = true;
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                // 6. Query MediaStore.Downloads by DISPLAY_NAME if in Nimiyo directory
+                if (fileName != null && !fileName.isEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        try (Cursor c = resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                new String[]{MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATA},
+                                MediaStore.MediaColumns.DISPLAY_NAME + " = ?", new String[]{fileName}, null)) {
+                            if (c != null) {
+                                while (c.moveToNext()) {
+                                    long rowId = c.getLong(0);
+                                    String rowData = c.getString(1);
+                                    if (rowData == null || filePath == null || rowData.equalsIgnoreCase(filePath) || rowData.contains("Nimiyo")) {
+                                        Uri rowUri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, rowId);
+                                        try {
+                                            int rows = resolver.delete(rowUri, null, null);
+                                            if (rows > 0) deleted = true;
+                                        } catch (Exception ignored) {}
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                // 7. Check if file is still physically on disk
+                boolean stillExists = (file != null && file.exists());
+                if (!stillExists) {
+                    deleted = true;
+                }
+
+                // 8. Trigger MediaScanner to drop deleted item from system index
+                if (filePath != null && !filePath.isEmpty()) {
+                    String lrcPath = filePath.replaceFirst("[.][^.]+$", ".lrc");
+                    MediaScannerConnection.scanFile(
+                        getContext(),
+                        new String[]{filePath, lrcPath},
+                        null,
+                        null
+                    );
+                }
+
+                boolean needsAllFilesAccess = false;
+                if (stillExists && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    needsAllFilesAccess = !Environment.isExternalStorageManager();
+                }
+
+                JSObject ret = new JSObject();
+                ret.put("success", deleted && !stillExists);
+                ret.put("stillExists", stillExists);
+                ret.put("needsAllFilesAccess", needsAllFilesAccess);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Failed to delete audio file: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void moveAudioToNimiyo(PluginCall call) {
+        String filePath = call.getString("filePath");
+        String contentUriStr = call.getString("contentUri");
+        String fileName = call.getString("fileName");
+
+        downloadExecutor.execute(() -> {
+            try {
+                File nimiyoAudioDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/AudioYo");
+                if (!nimiyoAudioDir.exists()) {
+                    nimiyoAudioDir.mkdirs();
+                }
+
+                File sourceFile = null;
+                if (filePath != null && !filePath.isEmpty()) {
+                    sourceFile = new File(filePath);
+                }
+
+                if (sourceFile == null || !sourceFile.exists()) {
+                    call.reject("File audio sumber tidak ditemukan");
+                    return;
+                }
+
+                // Check if already in Nimiyo/AudioYo
+                String currentPath = sourceFile.getAbsolutePath().toLowerCase();
+                if (currentPath.contains("nimiyo/audioyo") || (sourceFile.getParentFile() != null && sourceFile.getParentFile().getAbsolutePath().equalsIgnoreCase(nimiyoAudioDir.getAbsolutePath()))) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("alreadyInNimiyo", true);
+                    ret.put("newPath", sourceFile.getAbsolutePath());
+                    call.resolve(ret);
+                    return;
+                }
+
+                String destName = (fileName != null && !fileName.trim().isEmpty()) ? fileName.trim() : sourceFile.getName();
+                File destFile = new File(nimiyoAudioDir, destName);
+                if (destFile.exists()) {
+                    String base = destName.replaceFirst("[.][^.]+$", "");
+                    String ext = destName.contains(".") ? destName.substring(destName.lastIndexOf(".")) : ".mp3";
+                    destFile = new File(nimiyoAudioDir, base + "_" + System.currentTimeMillis() + ext);
+                }
+
+                boolean moved = sourceFile.renameTo(destFile);
+                if (!moved) {
+                    try (InputStream in = new FileInputStream(sourceFile);
+                         OutputStream out = new java.io.FileOutputStream(destFile)) {
+                        byte[] buf = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = in.read(buf)) > 0) {
+                            out.write(buf, 0, bytesRead);
+                        }
+                        out.flush();
+                        moved = true;
+                    }
+                    if (moved) {
+                        try { sourceFile.delete(); } catch (Exception ignored) {}
+                    }
+                }
+
+                // Companion LRC if exists
+                String srcLrcPath = sourceFile.getAbsolutePath().replaceFirst("[.][^.]+$", ".lrc");
+                File srcLrc = new File(srcLrcPath);
+                if (srcLrc.exists()) {
+                    String destLrcPath = destFile.getAbsolutePath().replaceFirst("[.][^.]+$", ".lrc");
+                    srcLrc.renameTo(new File(destLrcPath));
+                }
+
+                // Scan MediaStore for new file and old file
+                final String finalNewPath = destFile.getAbsolutePath();
+                final String finalOldPath = sourceFile.getAbsolutePath();
+                MediaScannerConnection.scanFile(
+                    getContext(),
+                    new String[]{ finalNewPath, finalOldPath },
+                    null,
+                    null
+                );
+
+                JSObject ret = new JSObject();
+                ret.put("success", moved);
+                ret.put("newPath", finalNewPath);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Gagal memindahkan audio: " + e.getMessage());
+            }
+        });
+    }
 }
+

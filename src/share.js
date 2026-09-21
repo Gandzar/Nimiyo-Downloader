@@ -141,13 +141,14 @@ const platformMapping = {
   spotify: { name: "Spotify", domains: /(spotify\.com)/i, color: "#1ED760" },
   applemusic: { name: "Apple Music", domains: /(music\.apple\.com)/i, color: "#FA576E" },
   facebook: { name: "Facebook", domains: /(facebook\.com|fb\.watch|fb\.com)/i, color: "#1877F2" },
-  threads: { name: "Threads", domains: /(threads\.net)/i, color: "#000000" },
+  threads: { name: "Threads", domains: /(threads\.(?:net|com))/i, color: "#000000" },
   pinterest: { name: "Pinterest", domains: /(pinterest\.com|pin\.it)/i, color: "#E60023" },
   bilibili: { name: "Bilibili", domains: /(bilibili\.com|b23\.tv)/i, color: "#00AEEC" },
   douyin: { name: "Douyin", domains: /(douyin\.com)/i, color: "#FF0050" },
   bandcamp: { name: "Bandcamp", domains: /(bandcamp\.com)/i, color: "#1DA1F2" },
   pixiv: { name: "Pixiv", domains: /(pixiv\.net|pixiv\.me|pximg\.net)/i, color: "#0096FA" },
-  rednote: { name: "RedNote", domains: /(rednote\.com|xiaohongshu\.com|xhslink\.com|xhslink\.cn)/i, color: "#FF2442" }
+  rednote: { name: "RedNote", domains: /(rednote\.com|xiaohongshu\.com|xhslink\.com|xhslink\.cn)/i, color: "#FF2442" },
+  shopee: { name: "Shopee", domains: /(shopee\.[a-z.]+|shp\.ee)/i, color: "#EE4D2D" }
 };
 
 const fallbackChains = {
@@ -164,7 +165,8 @@ const fallbackChains = {
   douyin: ['direct'],
   bandcamp: ['bandcampdownloader', 'direct'],
   pixiv: ['direct'],
-  rednote: ['direct']
+  rednote: ['direct'],
+  shopee: ['svxtract', 'direct']
 };
 
 function t(key, params = {}) {
@@ -178,19 +180,52 @@ function t(key, params = {}) {
 }
 
 function initLanguageAndTheme() {
-  const savedSettings = localStorage.getItem("nimiyo_settings");
-  if (savedSettings) {
-    try {
-      const parsed = JSON.parse(savedSettings);
-      if (parsed.language && shareTranslations[parsed.language]) {
-        currentLang = parsed.language;
-      }
-      if (parsed.darkMode) {
-        document.body.classList.add("dark-mode");
-      } else {
-        document.body.classList.remove("dark-mode");
-      }
-    } catch (_) {}
+  let parsed = {};
+
+  try {
+    if (window.NimiyoShareBridge && typeof window.NimiyoShareBridge.getAppSettings === 'function') {
+      const raw = window.NimiyoShareBridge.getAppSettings();
+      if (raw) parsed = JSON.parse(raw);
+    } else if (window.NimidzShareBridge && typeof window.NimidzShareBridge.getAppSettings === 'function') {
+      const raw = window.NimidzShareBridge.getAppSettings();
+      if (raw) parsed = JSON.parse(raw);
+    }
+  } catch (_) {}
+
+  if (!parsed.uiTheme) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("theme")) {
+      parsed.uiTheme = params.get("theme");
+    }
+    if (params.get("darkMode") !== null) {
+      parsed.darkMode = (params.get("darkMode") === "1" || params.get("darkMode") === "true");
+    }
+  }
+
+  if (!parsed.uiTheme) {
+    const savedSettings = localStorage.getItem("nimiyo_settings");
+    if (savedSettings) {
+      try {
+        parsed = { ...parsed, ...JSON.parse(savedSettings) };
+      } catch (_) { }
+    }
+  }
+
+  const theme = parsed.uiTheme || 'neobrutalism';
+  const isDark = !!parsed.darkMode;
+
+  document.documentElement.classList.remove('theme-neobrutalism', 'theme-softui');
+  document.documentElement.classList.add('theme-' + theme);
+  if (isDark) document.documentElement.classList.add('dark-mode');
+  else document.documentElement.classList.remove('dark-mode');
+
+  document.body.classList.remove('theme-neobrutalism', 'theme-softui');
+  document.body.classList.add('theme-' + theme);
+  if (isDark) document.body.classList.add('dark-mode');
+  else document.body.classList.remove('dark-mode');
+
+  if (parsed.language && shareTranslations[parsed.language]) {
+    currentLang = parsed.language;
   } else {
     const navLang = (navigator.language || '').toLowerCase();
     if (navLang.startsWith('id')) currentLang = 'id';
@@ -202,27 +237,48 @@ function initLanguageAndTheme() {
   // Update static UI text
   const labelAvail = document.getElementById("labelAvailableDownloads");
   if (labelAvail) labelAvail.innerText = t("availableDownloads");
-  
+
   const statusTextEl = document.getElementById("statusText");
   if (statusTextEl) statusTextEl.innerText = t("analyzing");
-  
+
   const cancelAnalyzeTextEl = document.getElementById("cancelAnalyzeBtnText");
   if (cancelAnalyzeTextEl) cancelAnalyzeTextEl.innerText = t("cancel").toUpperCase();
-  
+
   const openInAppBtn = document.getElementById("openInAppBtn");
   if (openInAppBtn) openInAppBtn.innerText = t("openApp").toUpperCase();
 
   const minimizeBtn = document.getElementById("minimizeBtn");
   if (minimizeBtn) minimizeBtn.innerText = t("minimize").toUpperCase();
-  
+
   const errorCloseBtn = document.getElementById("errorCloseBtn");
   if (errorCloseBtn) errorCloseBtn.innerText = t("close");
-  
+
   const errorRetryBtn = document.getElementById("errorRetryBtn");
   if (errorRetryBtn) errorRetryBtn.innerText = t("retry");
 
   updateServerButtonLabel();
 }
+
+window.applyNimiyoSettings = function(newSettings) {
+  if (!newSettings || typeof newSettings !== 'object') return;
+  const theme = newSettings.uiTheme || 'neobrutalism';
+  const isDark = !!newSettings.darkMode;
+
+  document.documentElement.classList.remove('theme-neobrutalism', 'theme-softui');
+  document.documentElement.classList.add('theme-' + theme);
+  if (isDark) document.documentElement.classList.add('dark-mode');
+  else document.documentElement.classList.remove('dark-mode');
+
+  document.body.classList.remove('theme-neobrutalism', 'theme-softui');
+  document.body.classList.add('theme-' + theme);
+  if (isDark) document.body.classList.add('dark-mode');
+  else document.body.classList.remove('dark-mode');
+
+  if (newSettings.language && shareTranslations[newSettings.language]) {
+    currentLang = newSettings.language;
+    initLanguageAndTheme();
+  }
+};
 
 function detectPlatform(url) {
   if (!url) return null;
@@ -238,8 +294,8 @@ function updateServerButtonLabel() {
   const servers = platform ? (fallbackChains[platform] || ['direct']) : ['direct'];
   const activeServerName = servers[currentServerIndex % servers.length] || 'direct';
 
-  const formatted = activeServerName === 'direct' 
-    ? t("server") 
+  const formatted = activeServerName === 'direct'
+    ? t("server")
     : (activeServerName.charAt(0).toUpperCase() + activeServerName.slice(1));
 
   serverLabel.innerText = formatted;
@@ -333,47 +389,168 @@ function determineExtension(mediaCategory, url = "") {
   return ".mp4";
 }
 
+// Format download option labels according to standardized category & quality rules:
+// Video: (VIDEO) MP4 1040P / (VIDEO) MP4 1080P / (VIDEO) MP4
+// Audio: (AUDIO) MP3 HD / (AUDIO) MP3 SD
+// Image: (IMAGE) JPG / (IMAGE) PNG / (IMAGE) WEBP
+function formatDownloadOptionLabel(dl, mediaResult) {
+  if (!dl) return "DOWNLOAD";
+
+  const category = detectMediaCategory(dl, mediaResult);
+  const rawType = String(dl.type || "").trim();
+  const rawQuality = String(dl.quality || "").trim();
+  const rawUrl = String(dl.url || "").split("?")[0].toLowerCase();
+  const combined = `${rawType} ${rawQuality} ${rawUrl}`.toUpperCase();
+
+  // Determine file extension
+  let extension = "MP4";
+  if (category === "audio") {
+    if (combined.includes("M4A") || rawUrl.endsWith(".m4a")) extension = "M4A";
+    else if (combined.includes("WAV") || rawUrl.endsWith(".wav")) extension = "WAV";
+    else if (combined.includes("FLAC") || rawUrl.endsWith(".flac")) extension = "FLAC";
+    else extension = "MP3";
+  } else if (category === "image") {
+    if (combined.includes("PNG") || rawUrl.endsWith(".png")) extension = "PNG";
+    else if (combined.includes("WEBP") || rawUrl.endsWith(".webp")) extension = "WEBP";
+    else extension = "JPG";
+  } else {
+    if (combined.includes("WEBM") || rawUrl.endsWith(".webm")) extension = "WEBM";
+    else if (combined.includes("MOV") || rawUrl.endsWith(".mov")) extension = "MOV";
+    else extension = "MP4";
+  }
+
+  // Check if item has a specific track title (e.g. in playlists: "01. Artist - Song")
+  const isPlaylistTrack = Boolean(
+    dl.title ||
+    (/^\d+[\.\s]/.test(rawType) && !rawType.startsWith("1080") && !rawType.startsWith("720") && !rawType.startsWith("360") && !rawType.startsWith("480")) ||
+    (rawType.includes(" - ") && !rawType.toUpperCase().startsWith("VIDEO") && !rawType.toUpperCase().startsWith("AUDIO") && !rawType.toUpperCase().startsWith("PHOTO") && !rawType.toUpperCase().startsWith("IMAGE"))
+  );
+  const trackTitle = dl.title || (isPlaylistTrack ? rawType : "");
+
+  let badge = "";
+
+  if (category === "audio") {
+    // Audio SD or HD only:
+    // Bitrate >= 192k or 320k or 256k or marked HD/HQ => HD
+    // 128k or lower or marked SD => SD
+    // Default to HD if standard/unspecified
+    const isSD = combined.includes("128KBPS") || combined.includes("128K") || combined.includes("64KBPS") || combined.includes("64K") || combined.includes("SD") || combined.includes("LOW");
+    const isHD = combined.includes("320KBPS") || combined.includes("320K") || combined.includes("256KBPS") || combined.includes("256K") || combined.includes("192KBPS") || combined.includes("HD") || combined.includes("HQ") || combined.includes("HIGH");
+
+    const qualityTag = (isSD && !isHD) ? "SD" : "HD";
+    badge = `(AUDIO) ${extension} ${qualityTag}`;
+  } else if (category === "image") {
+    // Image: (IMAGE) PNG, (IMAGE) JPG, (IMAGE) WEBP
+    badge = `(IMAGE) ${extension}`;
+  } else {
+    // Video: (VIDEO) MP4 1040P, (VIDEO) MP4 1080P, (VIDEO) MP4 720P, etc.
+    let qualityTag = "";
+    const resMatch = combined.match(/\b(\d{3,4}P|2K|4K)\b/i);
+    if (resMatch) {
+      qualityTag = resMatch[1].toUpperCase();
+    } else {
+      const numMatch = combined.match(/\b(\d{3,4})\b/);
+      if (numMatch) {
+        const val = parseInt(numMatch[1], 10);
+        if ([144, 240, 360, 480, 720, 1040, 1080, 1440, 2160].includes(val)) {
+          qualityTag = `${val}P`;
+        }
+      }
+    }
+
+    badge = qualityTag ? `(VIDEO) ${extension} ${qualityTag}` : `(VIDEO) ${extension}`;
+  }
+
+  return trackTitle ? `${trackTitle} • ${badge}` : badge;
+}
+
+// Helper to detect generic placeholder titles
+function isGenericMediaTitle(str) {
+  if (!str || typeof str !== "string") return true;
+  const s = str.trim().toUpperCase();
+  if (s.length < 2) return true;
+  const genericList = [
+    "VIDEO", "AUDIO", "IMAGE", "PHOTO", "PICTURE", "MEDIA", "DOWNLOAD", "FILE",
+    "MP4", "MP3", "PNG", "JPG", "JPEG", "WEBP", "M4A", "WAV", "FLAC",
+    "TIKTOK VIDEO", "TIKTOK CONTENT", "TIKTOK PHOTO",
+    "INSTAGRAM VIDEO", "INSTAGRAM PHOTO", "INSTAGRAM MEDIA",
+    "SPOTIFY TRACK", "SPOTIFY CONTENT", "SPOTIFY MUSIC", "SPOTIFY SONG",
+    "YOUTUBE VIDEO", "YOUTUBE CONTENT", "YOUTUBE AUDIO", "YOUTUBE PLAYLIST",
+    "PINTEREST PIN", "PINTEREST", "FACEBOOK MEDIA", "FACEBOOK VIDEO", "THREADS MEDIA",
+    "APPLE MUSIC CONTENT", "APPLE MUSIC TRACK", "TRACK", "SONG", "ORIGINAL IMAGE",
+    "AUDIOYO", "VIDEOYO", "IMAGEYO"
+  ];
+  if (genericList.includes(s)) return true;
+  if (/^\(VIDEO\)/i.test(s) || /^\(AUDIO\)/i.test(s) || /^\(IMAGE\)/i.test(s)) return true;
+  if (/^VIDEO\s*[\(\[]/i.test(s) || /^AUDIO\s*[\(\[]/i.test(s) || /^PHOTO\s*[\(\[]/i.test(s)) return true;
+  if (/^VIDEO_\d+/i.test(s) || /^AUDIO_\d+/i.test(s) || /^IMAGE_\d+/i.test(s)) return true;
+  return false;
+}
+
 function buildTargetFilename(dlItem, mediaResult, mediaCategory, platform, extension) {
-  let title = (mediaResult?.title || "").trim();
+  const isInstagram = (platform && platform.toLowerCase() === "instagram") || (currentPlatform && currentPlatform.toLowerCase() === "instagram") || (mediaResult?.sourceUrl && mediaResult.sourceUrl.includes("instagram.com"));
+  let title = (mediaResult?.title || mediaResult?.description || "").trim();
   let itemTitle = (dlItem?.title || dlItem?.name || "").trim();
   let dlType = (dlItem?.type || "").trim();
 
-  let cleanItemTitle = itemTitle.replace(/\[(MP3|Cover|MP4|Video|Audio|Photo|Image|HD|SD)\]/gi, "").trim();
-  let cleanType = dlType.replace(/\[(MP3|Cover|MP4|Video|Audio|Photo|Image|HD|SD)\]/gi, "").trim();
-
-  const genericKeywords = [
-    "MP4", "VIDEO", "PHOTO", "IMAGE", "MP3", "AUDIO", "MP4 (HD)", 
-    "HD", "SD", "ORIGINAL", "MEDIA", "DOWNLOAD", "DOWNLOAD MP3", 
-    "DOWNLOAD 320KBPS", "DOWNLOAD 128KBPS", "DOWNLOAD SONG", "320KBPS", "128KBPS",
-    "APPLE MUSIC TRACK", "TRACK", "ORIGINAL IMAGE", "HD VIDEO", "HD PHOTO"
-  ];
-
-  const isGenericItemTitle = !cleanItemTitle || genericKeywords.includes(cleanItemTitle.toUpperCase());
-  const isGenericDlType = !cleanType || genericKeywords.includes(cleanType.toUpperCase());
-
   let base = "";
-  if (!isGenericItemTitle) {
-    base = cleanItemTitle;
-  } else if (!isGenericDlType) {
-    base = cleanType;
-  } else if (title) {
+
+  if (itemTitle && !isGenericMediaTitle(itemTitle) && itemTitle !== "Instagram Content") {
+    base = itemTitle;
+  } else if (dlType && !isGenericMediaTitle(dlType) && (/^\d+[\.\s]/.test(dlType) || dlType.includes(" - "))) {
+    base = dlType.replace(/\s*•\s*\(AUDIO\).*$/i, "").replace(/\s*\[(MP3|M4A|Cover|HD|SD)\]/gi, "").trim();
+  } else if (title && !isGenericMediaTitle(title)) {
     base = title;
+  } else if (mediaResult?.description && !isGenericMediaTitle(mediaResult.description)) {
+    base = mediaResult.description;
   } else {
-    base = `Nimiyo_${platform || 'Media'}_${Date.now()}`;
+    if (isInstagram) {
+      base = "Instagram Content";
+    } else {
+      const sourceUrl = mediaResult?.sourceUrl || activeUrl || "";
+      const ytMatch = sourceUrl.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/i);
+      const spMatch = sourceUrl.match(/track\/([A-Za-z0-9]+)/i);
+      const pinMatch = sourceUrl.match(/pin\/(\d+)/i);
+      const author = mediaResult?.author || mediaResult?.username || "";
+      const platformName = platform ? (platform.charAt(0).toUpperCase() + platform.slice(1)) : "Media";
+
+      if (ytMatch && ytMatch[1]) {
+        base = `YouTube_${ytMatch[1]}`;
+      } else if (spMatch && spMatch[1]) {
+        base = `Spotify_${spMatch[1]}`;
+      } else if (pinMatch && pinMatch[1]) {
+        base = `${platformName}_Pin_${pinMatch[1]}`;
+      } else if (author) {
+        base = `${platformName}_${author}`;
+      } else {
+        base = `${platformName}_${Date.now()}`;
+      }
+    }
+  }
+
+  const itemIdx = dlItem?.itemIndex || dlItem?.index;
+  if (itemIdx && !base.endsWith(`_${itemIdx}`) && !base.includes(`(${itemIdx})`) && !base.startsWith(`${itemIdx}.`) && !base.startsWith(`0${itemIdx}.`)) {
+    base += `_${itemIdx}`;
   }
 
   base = base.replace(/\.(mp4|mp3|png|jpg|jpeg|webp|m4a|wav|webm|mov)$/i, "").trim();
-  let cleaned = base.replace(/[\\/:*?"<>|]/g, "_").trim();
-  cleaned = cleaned.replace(/\s+/g, "_").replace(/_+/g, "_");
+  let cleaned = base.replace(/[\\/:*?"<>|#%&{}$!'@+`=]/g, "_").trim();
+  cleaned = cleaned.replace(/[\s_]+/g, "_").replace(/^_+|_+$/g, "");
 
-  if (cleaned.length > 70) cleaned = cleaned.substring(0, 70);
-  if (!cleaned) cleaned = "Download";
+  if (cleaned.length > 80) cleaned = cleaned.substring(0, 80).replace(/_+$/, "");
+  if (!cleaned || isGenericMediaTitle(cleaned)) {
+    if (isInstagram) {
+      cleaned = "Instagram_Content" + (itemIdx ? `_${itemIdx}` : "");
+    } else {
+      cleaned = (platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : "Nimiyo") + "_" + Date.now();
+    }
+  }
 
   return cleaned + (extension.startsWith(".") ? extension : `.${extension}`);
 }
 
 // Global hook called by Native ShareActivity on URL extraction
-window.onShareUrlReady = function(url) {
+window.onShareUrlReady = function (url) {
   if (!url) return;
   activeUrl = url.trim();
 
@@ -402,7 +579,7 @@ window.onShareUrlReady = function(url) {
 };
 
 // Switch Server Button handler
-window.switchServer = function() {
+window.switchServer = function () {
   const platform = currentPlatform || (activeUrl ? detectPlatform(activeUrl) : null);
   if (!platform) return;
 
@@ -455,7 +632,7 @@ async function startAnalyze(forced = false) {
 
     try {
       const scraperModule = window.scrapr?.[platform];
-      const scrapeFunc = scraperModule?.[method];
+      const scrapeFunc = scraperModule?.[method] || scraperModule?.default || window.scrapr?.[`scrape${platform.charAt(0).toUpperCase() + platform.slice(1)}`];
       if (!scrapeFunc) continue;
 
       const res = await scrapeFunc(activeUrl);
@@ -537,10 +714,10 @@ function renderResult(result, platform) {
       const meta = document.createElement("div");
       meta.className = "download-option-meta";
       meta.style.flex = "1";
-      
+
       const type = document.createElement("span");
       type.className = "option-type";
-      type.innerText = `${dl.type || 'media'} (${dl.quality || 'HD'})`;
+      type.innerText = formatDownloadOptionLabel(dl, result);
 
       const quality = document.createElement("span");
       quality.className = "option-quality";
@@ -632,7 +809,7 @@ async function executeSingleDownload(dlItem, result, index = 0) {
 
       let parsedData = resData?.data || resData;
       if (typeof parsedData === "string") {
-        try { parsedData = JSON.parse(parsedData); } catch (_) {}
+        try { parsedData = JSON.parse(parsedData); } catch (_) { }
       }
       const htmlContent = parsedData?.data || (typeof parsedData === "string" ? parsedData : "");
       const parser = new DOMParser();
@@ -708,7 +885,7 @@ async function executeSingleDownload(dlItem, result, index = 0) {
 
       let parsedData = resData?.data || resData;
       if (typeof parsedData === "string") {
-        try { parsedData = JSON.parse(parsedData); } catch (_) {}
+        try { parsedData = JSON.parse(parsedData); } catch (_) { }
       }
       const htmlContent = parsedData?.html || (typeof parsedData === "string" ? parsedData : "");
       const parser = new DOMParser();
@@ -754,7 +931,7 @@ async function executeSingleDownload(dlItem, result, index = 0) {
 
       let parsedData = resData?.data || resData;
       if (typeof parsedData === "string") {
-        try { parsedData = JSON.parse(parsedData); } catch (_) {}
+        try { parsedData = JSON.parse(parsedData); } catch (_) { }
       }
       const htmlContent = parsedData?.data || (typeof parsedData === "string" ? parsedData : "");
       const parser = new DOMParser();
@@ -844,19 +1021,40 @@ function saveToHistory(filename, result, dlItem, mediaType = "media") {
   try {
     const historyJson = localStorage.getItem("nimiyo_history");
     let history = historyJson ? JSON.parse(historyJson) : [];
+
+    let historyTitle = filename.replace(/\.(mp4|mp3|png|jpg|jpeg|webp|m4a|wav|webm|mov)$/i, "").replace(/_+/g, " ").trim();
+    if (result?.title && !isGenericMediaTitle(result.title)) {
+      historyTitle = result.title;
+    }
+    if (dlItem?.title && !isGenericMediaTitle(dlItem.title)) {
+      historyTitle = dlItem.title;
+    }
+    if (!historyTitle || isGenericMediaTitle(historyTitle)) {
+      historyTitle = filename.replace(/\.(mp4|mp3|png|jpg|jpeg|webp|m4a|wav|webm|mov)$/i, "").replace(/_+/g, " ").trim();
+    }
+
     const historyItem = {
       id: "dl_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
       filename: filename,
-      title: dlItem.title || result.title || filename,
-      thumbnail: dlItem.thumbnail || result.thumbnail || "nimiyo_icon.webp",
-      platform: currentPlatform,
+      title: historyTitle,
+      thumbnail: dlItem?.thumbnail || result?.thumbnail || "nimiyo_icon.webp",
+      platform: currentPlatform || (activeUrl ? detectPlatform(activeUrl) : "other"),
       mediaType: mediaType,
       timestamp: Date.now()
     };
+
     history.unshift(historyItem);
     if (history.length > 50) history.pop();
     localStorage.setItem("nimiyo_history", JSON.stringify(history));
-  } catch (_) {}
+
+    // Persist to native Android SharedPreferences so MainActivity syncs it
+    const bridge = window.NimiyoShareBridge || window.NimidzShareBridge || window.NimiyoShareBridge;
+    if (bridge && typeof bridge.saveHistoryItem === "function") {
+      bridge.saveHistoryItem(JSON.stringify(historyItem));
+    }
+  } catch (err) {
+    console.warn("Failed to save history in QuickSave:", err);
+  }
 }
 
 function notifyNative(title, message, progress, max, isCompleted) {
@@ -872,13 +1070,13 @@ function showNativeToast(message) {
 }
 
 // Window Exposed Functions
-window.dismissPanel = function() {
+window.dismissPanel = function () {
   if (window.NimiyoShareBridge && window.NimiyoShareBridge.dismiss) {
     window.NimiyoShareBridge.dismiss();
   }
 };
 
-window.minimizeWindow = function() {
+window.minimizeWindow = function () {
   showToast(t("backgroundDl"));
   showNativeToast(t("backgroundDl"));
   if (window.NimiyoShareBridge && window.NimiyoShareBridge.minimize) {
@@ -888,17 +1086,17 @@ window.minimizeWindow = function() {
   }
 };
 
-window.cancelOngoingAnalysis = function() {
+window.cancelOngoingAnalysis = function () {
   analysisAborted = true;
   document.getElementById("statusSection").classList.add("hidden");
   showToast(t("cancelled"));
 };
 
-window.retryAnalyze = function() {
+window.retryAnalyze = function () {
   startAnalyze();
 };
 
-window.openFullApp = function() {
+window.openFullApp = function () {
   if (window.NimiyoShareBridge && window.NimiyoShareBridge.openInMainApp) {
     window.NimiyoShareBridge.openInMainApp(activeUrl);
   } else {
@@ -906,7 +1104,7 @@ window.openFullApp = function() {
   }
 };
 
-window.showToast = function(message) {
+window.showToast = function (message) {
   const container = document.getElementById("toastContainer");
   if (!container) return;
 

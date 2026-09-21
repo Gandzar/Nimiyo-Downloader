@@ -19,6 +19,7 @@ import {
   scrapeThreads,
   scrapeBandcamp,
   scrapePixiv,
+  scrapeShopee,
 } from "./scrapers/index.js";
 import { cleanUrl } from "./utils/urlUtils.js";
 import { getUserAgent } from "./utils/index.js";
@@ -119,6 +120,7 @@ function detectPlatform(url) {
     return "threads";
   if (url.includes("bandcamp.com")) return "bandcamp";
   if (url.includes("pixiv.net")) return "pixiv";
+  if (url.includes("shopee.") || url.includes("shp.ee")) return "shopee";
   return "unknown";
 }
 
@@ -272,6 +274,8 @@ window.startAnalyze = async function () {
       data = await scrapeBandcamp(targetUrl);
     } else if (currentPlatform === "pixiv") {
       data = await scrapePixiv(targetUrl);
+    } else if (currentPlatform === "shopee") {
+      data = await scrapeShopee(targetUrl);
     } else {
       data = { status: false, message: lang["share-err-unsupported"] || "Unsupported platform link." };
     }
