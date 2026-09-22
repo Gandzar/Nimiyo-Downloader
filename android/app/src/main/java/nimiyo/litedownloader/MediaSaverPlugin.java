@@ -39,6 +39,7 @@ import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -60,6 +61,8 @@ public class MediaSaverPlugin extends Plugin {
     private static final int NOTIFICATION_ID = 8801;
     private static final String MUSIC_CHANNEL_ID = "nimiyo_media_channel";
     private static final int MUSIC_NOTIFICATION_ID = 8803;
+    private android.os.PowerManager.WakeLock downloadWakeLock = null;
+    private final java.util.concurrent.atomic.AtomicInteger activeDownloads = new java.util.concurrent.atomic.AtomicInteger(0);
     private BroadcastReceiver becomingNoisyReceiver = null;
 
     public static void dispatchMediaAction(String action, Long positionMs) {
@@ -258,13 +261,44 @@ public class MediaSaverPlugin extends Plugin {
 
         boolean isPlaying = call.getBoolean("isPlaying", true);
 
+        // Store artwork in memory cache to bypass Android Binder 1MB IPC limit
+        if (artwork != null) {
+            MusicPlaybackService.setPendingArtwork(artwork);
+        }
+
+        // 1. Direct in-memory update if service is already running (0ms latency, zero IPC, safe from background)
+        MusicPlaybackService runningService = MusicPlaybackService.getInstance();
+        if (runningService != null) {
+            final String fTitle = title;
+            final String fArtist = artist;
+            final String fAlbum = album;
+            final long fDuration = duration;
+            final long fPosition = position;
+            final boolean fIsPlaying = isPlaying;
+            try {
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        try {
+                            runningService.updateDirectly(fTitle, fArtist, fAlbum, fDuration, fPosition, fIsPlaying);
+                        } catch (Exception ignored) {}
+                    });
+                } else {
+                    runningService.updateDirectly(fTitle, fArtist, fAlbum, fDuration, fPosition, fIsPlaying);
+                }
+                call.resolve(new JSObject().put("success", true));
+                return;
+            } catch (Exception ignored) {}
+        }
+
+        // 2. Service not yet started: Start it via Intent
         try {
             Intent intent = new Intent(getContext(), MusicPlaybackService.class);
             intent.setAction(MusicPlaybackService.ACTION_UPDATE);
             intent.putExtra(MusicPlaybackService.EXTRA_TITLE, title);
             intent.putExtra(MusicPlaybackService.EXTRA_ARTIST, artist);
             intent.putExtra(MusicPlaybackService.EXTRA_ALBUM, album);
-            if (artwork != null) {
+            // Only add artwork to Intent extra if it is NOT a huge base64 data string
+            if (artwork != null && artwork.length() < 1024) {
                 intent.putExtra(MusicPlaybackService.EXTRA_ARTWORK, artwork);
             }
             intent.putExtra(MusicPlaybackService.EXTRA_DURATION, duration);
@@ -272,7 +306,13 @@ public class MediaSaverPlugin extends Plugin {
             intent.putExtra(MusicPlaybackService.EXTRA_IS_PLAYING, isPlaying);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isPlaying) {
-                getContext().startForegroundService(intent);
+                try {
+                    getContext().startForegroundService(intent);
+                } catch (Exception fse) {
+                    try {
+                        getContext().startService(intent);
+                    } catch (Exception ignored) {}
+                }
             } else {
                 getContext().startService(intent);
             }
@@ -363,7 +403,35 @@ public class MediaSaverPlugin extends Plugin {
 
     private final ExecutorService downloadExecutor = Executors.newFixedThreadPool(4);
 
-    private void showSystemNotificationDirect(String title, String message, int progress, int max, boolean isCompleted) {
+    private synchronized void acquireDownloadWakeLock() {
+        try {
+            if (activeDownloads.incrementAndGet() == 1) {
+                if (downloadWakeLock == null) {
+                    android.os.PowerManager pm = (android.os.PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+                    if (pm != null) {
+                        downloadWakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Nimiyo:DownloadWakeLock");
+                        downloadWakeLock.setReferenceCounted(false);
+                    }
+                }
+                if (downloadWakeLock != null && !downloadWakeLock.isHeld()) {
+                    downloadWakeLock.acquire(30 * 60 * 1000L); // 30 minutes safety timeout
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private synchronized void releaseDownloadWakeLock() {
+        try {
+            if (activeDownloads.decrementAndGet() <= 0) {
+                activeDownloads.set(0);
+                if (downloadWakeLock != null && downloadWakeLock.isHeld()) {
+                    downloadWakeLock.release();
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void showSystemNotificationDirect(int notifId, String title, String message, int progress, int max, boolean isCompleted) {
         try {
             ensureNotificationChannel();
             NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
@@ -374,7 +442,7 @@ public class MediaSaverPlugin extends Plugin {
             Intent openAppIntent = new Intent(getContext(), MainActivity.class);
             openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             android.app.PendingIntent pendingIntent = android.app.PendingIntent.getActivity(
-                getContext(), 0, openAppIntent,
+                getContext(), notifId, openAppIntent,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT : android.app.PendingIntent.FLAG_UPDATE_CURRENT
             );
 
@@ -394,8 +462,12 @@ public class MediaSaverPlugin extends Plugin {
                 builder.setProgress(max, progress, false);
             }
 
-            manager.notify(NOTIFICATION_ID, builder.build());
+            manager.notify(notifId, builder.build());
         } catch (Exception ignored) {}
+    }
+
+    private void showSystemNotificationDirect(String title, String message, int progress, int max, boolean isCompleted) {
+        showSystemNotificationDirect(NOTIFICATION_ID, title, message, progress, max, isCompleted);
     }
 
     private HttpURLConnection connectWithRedirects(String initialUrl, String method, Map<String, String> headers) throws Exception {
@@ -427,11 +499,16 @@ public class MediaSaverPlugin extends Plugin {
                 String location = conn.getHeaderField("Location");
                 conn.disconnect();
                 if (location != null && !location.isEmpty()) {
-                    if (location.startsWith("/")) {
-                        URL prevUrl = new URL(currentUrl);
-                        location = prevUrl.getProtocol() + "://" + prevUrl.getHost() + location;
+                    try {
+                        URL nextUrl = new URL(new URL(currentUrl), location);
+                        currentUrl = nextUrl.toString();
+                    } catch (Exception e) {
+                        if (location.startsWith("/")) {
+                            URL prevUrl = new URL(currentUrl);
+                            location = prevUrl.getProtocol() + "://" + prevUrl.getHost() + location;
+                        }
+                        currentUrl = location;
                     }
-                    currentUrl = location;
                     method = "GET";
                     redirectCount++;
                     continue;
@@ -457,10 +534,12 @@ public class MediaSaverPlugin extends Plugin {
         String overwriteMode = call.getString("overwriteMode", "rename");
 
         downloadExecutor.execute(() -> {
+            acquireDownloadWakeLock();
             HttpURLConnection conn = null;
             OutputStream os = null;
             InputStream is = null;
             Uri fileUri = null;
+            File targetFileLegacy = null;
             ContentResolver resolver = getContext().getContentResolver();
 
             try {
@@ -479,10 +558,12 @@ public class MediaSaverPlugin extends Plugin {
                     targetSubFolder = "VideoYo";
                 }
 
+                int notifId = 8000 + Math.abs((targetSubFolder + "/" + fileName).hashCode() % 10000);
+
                 if ("skip".equalsIgnoreCase(overwriteMode)) {
                     File existing = resolveMediaFile(targetSubFolder, fileName);
                     if (existing != null && existing.exists()) {
-                        showSystemNotificationDirect("Nimiyo Downloader", "Berkas sudah ada (dilewati): " + existing.getName(), 100, 100, true);
+                        showSystemNotificationDirect(notifId, "Nimiyo Downloader", "Berkas sudah ada (dilewati): " + existing.getName(), 100, 100, true);
                         JSObject ret = new JSObject();
                         ret.put("success", true);
                         ret.put("skipped", true);
@@ -499,7 +580,7 @@ public class MediaSaverPlugin extends Plugin {
                 }
 
                 ensureNotificationChannel();
-                showSystemNotificationDirect("Nimiyo Downloader", "Mengunduh " + fileName, 10, 100, false);
+                showSystemNotificationDirect(notifId, "Nimiyo Downloader", "Mengunduh " + fileName, 10, 100, false);
 
                 Map<String, String> headers = new HashMap<>();
                 if (headersObj != null) {
@@ -529,9 +610,6 @@ public class MediaSaverPlugin extends Plugin {
                 long contentLength = conn.getContentLengthLong();
                 is = conn.getInputStream();
 
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
-
                 String subFolder = targetSubFolder;
                 String mime;
 
@@ -555,16 +633,36 @@ public class MediaSaverPlugin extends Plugin {
                     else if (lowerFileName.endsWith(".mov")) mime = "video/quicktime";
                 }
 
-                values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                String actualFileName = fileName;
+                String actualFilePath = null;
 
-                Uri collectionUri;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
                     if (subFolder == null || subFolder.trim().isEmpty()) {
-                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/");
                     } else {
-                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder + "/");
                     }
-                    collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+                    Uri collectionUri;
+                    try {
+                        collectionUri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                    } catch (Throwable t) {
+                        collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                    }
+
+                    fileUri = resolver.insert(collectionUri, values);
+                    if (fileUri == null) {
+                        throw new Exception("Failed to create MediaStore entry in Downloads/Nimiyo/" + subFolder);
+                    }
+
+                    os = resolver.openOutputStream(fileUri);
+                    if (os == null) {
+                        throw new Exception("Failed to open output stream for MediaStore URI");
+                    }
                 } else {
                     File publicDir;
                     if (subFolder == null || subFolder.trim().isEmpty()) {
@@ -575,17 +673,24 @@ public class MediaSaverPlugin extends Plugin {
                     if (!publicDir.exists()) {
                         publicDir.mkdirs();
                     }
-                    collectionUri = MediaStore.Files.getContentUri("external");
-                }
 
-                fileUri = resolver.insert(collectionUri, values);
-                if (fileUri == null) {
-                    throw new Exception("Failed to create MediaStore entry in Downloads/Nimiyo/" + subFolder);
-                }
-
-                os = resolver.openOutputStream(fileUri);
-                if (os == null) {
-                    throw new Exception("Failed to open output stream for MediaStore URI");
+                    File targetFile = new File(publicDir, fileName);
+                    if ("rename".equalsIgnoreCase(overwriteMode) && targetFile.exists()) {
+                        String nameWithoutExt = fileName;
+                        String ext = "";
+                        int dot = fileName.lastIndexOf('.');
+                        if (dot > 0) {
+                            nameWithoutExt = fileName.substring(0, dot);
+                            ext = fileName.substring(dot);
+                        }
+                        int counter = 1;
+                        while (targetFile.exists()) {
+                            targetFile = new File(publicDir, nameWithoutExt + " (" + counter + ")" + ext);
+                            counter++;
+                        }
+                    }
+                    targetFileLegacy = targetFile;
+                    os = new FileOutputStream(targetFileLegacy);
                 }
 
                 byte[] buf = new byte[8192];
@@ -601,34 +706,53 @@ public class MediaSaverPlugin extends Plugin {
                     if (contentLength > 0 && (now - lastProgressTime > 400)) {
                         lastProgressTime = now;
                         int percent = (int) Math.min((totalDownloaded * 100) / contentLength, 99);
-                        showSystemNotificationDirect("Nimiyo Downloader", "Mengunduh " + fileName + " (" + percent + "%)", percent, 100, false);
+                        showSystemNotificationDirect(notifId, "Nimiyo Downloader", "Mengunduh " + fileName + " (" + percent + "%)", percent, 100, false);
                     }
                 }
                 os.flush();
+                try { os.close(); } catch (Exception ignored) {}
+                os = null;
 
-                String actualFileName = fileName;
-                String actualFilePath = null;
-                try (Cursor cursor = resolver.query(fileUri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA}, null, null, null)) {
-                    if (cursor != null && cursor.moveToFirst()) {
-                        int nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
-                        if (nameIdx != -1) {
-                            String dName = cursor.getString(nameIdx);
-                            if (dName != null && !dName.isEmpty()) {
-                                actualFileName = dName;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && fileUri != null) {
+                    ContentValues finishValues = new ContentValues();
+                    finishValues.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                    resolver.update(fileUri, finishValues, null, null);
+
+                    try (Cursor cursor = resolver.query(fileUri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA}, null, null, null)) {
+                        if (cursor != null && cursor.moveToFirst()) {
+                            int nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                            if (nameIdx != -1) {
+                                String dName = cursor.getString(nameIdx);
+                                if (dName != null && !dName.isEmpty()) {
+                                    actualFileName = dName;
+                                }
+                            }
+                            int dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
+                            if (dataIdx != -1) {
+                                actualFilePath = cursor.getString(dataIdx);
                             }
                         }
-                        int dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
-                        if (dataIdx != -1) {
-                            actualFilePath = cursor.getString(dataIdx);
-                        }
-                    }
-                } catch (Exception ignored) {}
+                    } catch (Exception ignored) {}
+                } else if (targetFileLegacy != null) {
+                    actualFileName = targetFileLegacy.getName();
+                    actualFilePath = targetFileLegacy.getAbsolutePath();
+                    fileUri = Uri.fromFile(targetFileLegacy);
 
-                showSystemNotificationDirect("Nimiyo Downloader", "Selesai: " + actualFileName, 100, 100, true);
+                    final String scanPath = actualFilePath;
+                    final String scanMime = mime;
+                    MediaScannerConnection.scanFile(
+                        getContext(),
+                        new String[]{scanPath},
+                        new String[]{scanMime},
+                        null
+                    );
+                }
+
+                showSystemNotificationDirect(notifId, "Nimiyo Downloader", "Selesai: " + actualFileName, 100, 100, true);
 
                 JSObject ret = new JSObject();
                 ret.put("success", true);
-                ret.put("uri", fileUri.toString());
+                ret.put("uri", fileUri != null ? fileUri.toString() : "");
                 ret.put("fileName", actualFileName);
                 if (actualFilePath != null) {
                     ret.put("filePath", actualFilePath);
@@ -641,12 +765,17 @@ public class MediaSaverPlugin extends Plugin {
                 if (fileUri != null) {
                     try { resolver.delete(fileUri, null, null); } catch (Exception ignored) {}
                 }
-                showSystemNotificationDirect("Nimiyo Downloader", "Gagal mengunduh " + fileName, 0, 0, true);
+                if (targetFileLegacy != null && targetFileLegacy.exists()) {
+                    try { targetFileLegacy.delete(); } catch (Exception ignored) {}
+                }
+                int fallbackNotifId = 8000 + Math.abs(fileName.hashCode() % 10000);
+                showSystemNotificationDirect(fallbackNotifId, "Nimiyo Downloader", "Gagal mengunduh " + fileName, 0, 0, true);
                 call.reject("Download failed: " + e.getMessage());
             } finally {
                 try { if (is != null) is.close(); } catch (Exception ignored) {}
                 try { if (os != null) os.close(); } catch (Exception ignored) {}
                 try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
+                releaseDownloadWakeLock();
             }
         });
     }
@@ -690,8 +819,6 @@ public class MediaSaverPlugin extends Plugin {
             }
 
             ContentResolver resolver = getContext().getContentResolver();
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
             
             String lowerFileName = fileName.toLowerCase();
             String subFolder;
@@ -745,16 +872,63 @@ public class MediaSaverPlugin extends Plugin {
                 handleExistingFileForOverwrite(subFolder, fileName);
             }
 
-            values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-            
-            Uri collectionUri;
+            String actualFileName = fileName;
+            String actualFilePath = null;
+            Uri fileUri = null;
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
                 if (subFolder == null || subFolder.trim().isEmpty()) {
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/");
                 } else {
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder + "/");
                 }
-                collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+                Uri collectionUri;
+                try {
+                    collectionUri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                } catch (Throwable t) {
+                    collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                }
+
+                fileUri = resolver.insert(collectionUri, values);
+                if (fileUri == null) {
+                    call.reject("Failed to create MediaStore entry");
+                    return;
+                }
+
+                try (OutputStream os = resolver.openOutputStream(fileUri);
+                     FileInputStream fis = new FileInputStream(sourceFile)) {
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = fis.read(buf)) > 0) {
+                        os.write(buf, 0, len);
+                    }
+                    os.flush();
+                }
+
+                ContentValues finishValues = new ContentValues();
+                finishValues.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                resolver.update(fileUri, finishValues, null, null);
+
+                try (Cursor cursor = resolver.query(fileUri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA}, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
+                        if (nameIdx != -1) {
+                            String dName = cursor.getString(nameIdx);
+                            if (dName != null && !dName.isEmpty()) {
+                                actualFileName = dName;
+                            }
+                        }
+                        int dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
+                        if (dataIdx != -1) {
+                            actualFilePath = cursor.getString(dataIdx);
+                        }
+                    }
+                } catch (Exception ignored) {}
             } else {
                 File publicDir;
                 if (subFolder == null || subFolder.trim().isEmpty()) {
@@ -765,46 +939,48 @@ public class MediaSaverPlugin extends Plugin {
                 if (!publicDir.exists()) {
                     publicDir.mkdirs();
                 }
-                collectionUri = MediaStore.Files.getContentUri("external");
-            }
 
-            Uri fileUri = resolver.insert(collectionUri, values);
-            if (fileUri == null) {
-                call.reject("Failed to create MediaStore entry");
-                return;
-            }
-
-            OutputStream os = resolver.openOutputStream(fileUri);
-            FileInputStream fis = new FileInputStream(sourceFile);
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = fis.read(buf)) > 0) {
-                os.write(buf, 0, len);
-            }
-            fis.close();
-            os.close();
-
-            String actualFileName = fileName;
-            String actualFilePath = null;
-            try (Cursor cursor = resolver.query(fileUri, new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA}, null, null, null)) {
-                if (cursor != null && cursor.moveToFirst()) {
-                    int nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
-                    if (nameIdx != -1) {
-                        String dName = cursor.getString(nameIdx);
-                        if (dName != null && !dName.isEmpty()) {
-                            actualFileName = dName;
-                        }
+                File targetFile = new File(publicDir, fileName);
+                if ("rename".equalsIgnoreCase(overwriteMode) && targetFile.exists()) {
+                    String nameWithoutExt = fileName;
+                    String ext = "";
+                    int dot = fileName.lastIndexOf('.');
+                    if (dot > 0) {
+                        nameWithoutExt = fileName.substring(0, dot);
+                        ext = fileName.substring(dot);
                     }
-                    int dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
-                    if (dataIdx != -1) {
-                        actualFilePath = cursor.getString(dataIdx);
+                    int counter = 1;
+                    while (targetFile.exists()) {
+                        targetFile = new File(publicDir, nameWithoutExt + " (" + counter + ")" + ext);
+                        counter++;
                     }
                 }
-            } catch (Exception ignored) {}
+
+                try (FileOutputStream fos = new FileOutputStream(targetFile);
+                     FileInputStream fis = new FileInputStream(sourceFile)) {
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = fis.read(buf)) > 0) {
+                        fos.write(buf, 0, len);
+                    }
+                    fos.flush();
+                }
+
+                actualFileName = targetFile.getName();
+                actualFilePath = targetFile.getAbsolutePath();
+                fileUri = Uri.fromFile(targetFile);
+
+                MediaScannerConnection.scanFile(
+                    getContext(),
+                    new String[]{actualFilePath},
+                    new String[]{mime},
+                    null
+                );
+            }
 
             JSObject ret = new JSObject();
             ret.put("success", true);
-            ret.put("uri", fileUri.toString());
+            ret.put("uri", fileUri != null ? fileUri.toString() : "");
             ret.put("fileName", actualFileName);
             if (actualFilePath != null) {
                 ret.put("filePath", actualFilePath);

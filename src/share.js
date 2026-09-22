@@ -534,7 +534,7 @@ function buildTargetFilename(dlItem, mediaResult, mediaCategory, platform, exten
   }
 
   base = base.replace(/\.(mp4|mp3|png|jpg|jpeg|webp|m4a|wav|webm|mov)$/i, "").trim();
-  let cleaned = base.replace(/[\\/:*?"<>|#%&{}$!'@+`=]/g, "_").trim();
+  let cleaned = base.replace(/[\\/:*?"<>|#%&{}$!'@+`=~]/g, "_").trim();
   cleaned = cleaned.replace(/[\s_]+/g, "_").replace(/^_+|_+$/g, "");
 
   if (cleaned.length > 80) cleaned = cleaned.substring(0, 80).replace(/_+$/, "");

@@ -15,6 +15,14 @@ public class MainActivity extends BridgeActivity {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
             }
+        } else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+            // Auto request storage permissions on Android 10 and below (API <= 29)
+            if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE
+                }, 102);
+            }
         }
     }
 

@@ -44,6 +44,7 @@ public class MusicPlaybackService extends Service {
     public static final int MUSIC_NOTIFICATION_ID = 8803;
 
     private static MusicPlaybackService instance = null;
+    private static volatile String pendingArtworkData = null;
     private MediaSession mediaSession = null;
     private boolean isPlaying = false;
     private long currentDurationMs = 0;
@@ -55,6 +56,29 @@ public class MusicPlaybackService extends Service {
 
     public static MusicPlaybackService getInstance() {
         return instance;
+    }
+
+    public static void setPendingArtwork(String artworkData) {
+        pendingArtworkData = artworkData;
+    }
+
+    public void updateDirectly(String title, String artist, String album, long duration, long position, boolean playing) {
+        currentTitle = (title != null && !title.isEmpty()) ? title : "NIMIYO";
+        currentArtist = (artist != null) ? artist : "";
+        currentAlbum = (album != null) ? album : "";
+        isPlaying = playing;
+        currentDurationMs = duration;
+        currentPositionMs = position;
+
+        if (pendingArtworkData != null) {
+            currentArtwork = loadArtworkBitmap(pendingArtworkData);
+        } else if (currentArtwork == null) {
+            currentArtwork = getDefaultArtworkBitmap();
+        }
+
+        updateMediaMetadata();
+        updatePlaybackState(isPlaying, currentPositionMs);
+        buildAndShowNotification();
     }
 
     @Override
@@ -176,6 +200,9 @@ public class MusicPlaybackService extends Service {
         currentPositionMs = intent.getLongExtra(EXTRA_POSITION, 0);
 
         String artworkData = intent.getStringExtra(EXTRA_ARTWORK);
+        if (artworkData == null || artworkData.isEmpty()) {
+            artworkData = pendingArtworkData;
+        }
         currentArtwork = loadArtworkBitmap(artworkData);
 
         updateMediaMetadata();
@@ -331,8 +358,8 @@ public class MusicPlaybackService extends Service {
                 }
             }
         } else {
-            // When paused, release strict foreground lock so notification can be dismissed if user wants, but stay visible
-            stopForeground(false);
+            // When paused, update notification without stripping foreground privilege via stopForeground(false).
+            // Calling stopForeground(false) causes Android 12+ to reject subsequent background startForegroundService() calls!
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) {
                 manager.notify(MUSIC_NOTIFICATION_ID, notification);

@@ -1,14 +1,14 @@
 {
-  "versionCode": 3,
-  "versionName": "2.1.0",
+  "versionCode": 4,
+  "versionName": "2.1.1",
   "minRequiredVersion": "2.0.0",
-  "releaseDate": "2026-09-22",
-  "downloadUrl": "https://github.com/nimidz/Nimiyo-Downloader/releases/download/v2.1.0/Nimiyo.v2.1.0.apk",
+  "releaseDate": "2026-09-23",
+  "downloadUrl": "https://github.com/nimidz/Nimiyo-Downloader/releases/download/v2.1.1/Nimiyo.v2.1.1.apk",
   "changelog": [
-    "✨ Tombol Stop / Cancel di Floating Mini Player",
-    "🎨 Pengaturan Warna Aksen UI (Yellow, Blue, Red, Grey)",
-    "🐛 Perbaikan notifikasi pemutar audio saat aplikasi ditutup",
-    "🎵 Perbaikan sinkronisasi dan auto-scroll lirik ke paling atas",
-    "⚙️ Jendela Pembaruan Baru & Tombol Download Manual Install"
+    "⚡ Perbaikan sinkronisasi dan transisi notifikasi pemutar musik antar lagu",
+    "🛡️ Proteksi album art resolusi tinggi dari batas IPC Binder latar belakang",
+    "📱 Kompatibilitas sistem penyimpanan ganda Android 9 & Android 11",
+    "🔋 WakeLock CPU background unduhan & ID notifikasi dinamis per file",
+    "💾 Proteksi kuota penyimpanan riwayat & cache lirik musik"
   ]
 }

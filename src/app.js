@@ -256,7 +256,7 @@ const translations = {
     btnResetSettings: "RESET ALL SETTINGS TO DEFAULT",
     groupAbout: "About & Help",
     menuAboutDesc: "Version, Info & Developer",
-    aboutVersion: "Version 2.1.0 (Lite)",
+    aboutVersion: "Version 2.1.1 (Lite)",
     aboutDesc: "A premium, modern, and lightweight media downloader engine built on scrapr.",
     aboutThanks: "Thanks to:",
     toastClipboardEmpty: "Clipboard is empty or does not contain a text link.",
@@ -944,7 +944,7 @@ const translations = {
     btnResetSettings: "KEMBALIKAN SEMUA SETELAN KE DEFAULT",
     groupAbout: "Tentang & Bantuan",
     menuAboutDesc: "Versi, Info & Pengembang",
-    aboutVersion: "Versi 2.1.0 (Lite)",
+    aboutVersion: "Versi 2.1.1 (Lite)",
     aboutDesc: "Mesin pengunduh media premium, modern, dan ringan yang dibangun di atas scrapr.",
     aboutThanks: "Terima kasih kepada:",
     toastClipboardEmpty: "Papan klip kosong atau tidak berisi tautan teks.",
@@ -1630,7 +1630,7 @@ const translations = {
     btnResetSettings: "恢复所有设置到默认值",
     groupAbout: "关于与帮助",
     menuAboutDesc: "版本信息、开源与开发团队",
-    aboutVersion: "版本 2.1.0 (Lite)",
+    aboutVersion: "版本 2.1.1 (Lite)",
     aboutDesc: "基于 scrapr 构建的高级、现代且轻量级的媒体下载引擎。",
     aboutThanks: "致谢:",
     toastClipboardEmpty: "剪贴板为空或不包含文本链接。",
@@ -2318,7 +2318,7 @@ const translations = {
     btnResetSettings: "すべての設定を初期値に戻す",
     groupAbout: "アプリについてとヘルプ",
     menuAboutDesc: "バージョン、情報と開発チーム",
-    aboutVersion: "バージョン 2.1.0 (Lite)",
+    aboutVersion: "バージョン 2.1.1 (Lite)",
     aboutDesc: "scrapr をベースに構築されたプレミアムでモダン、軽量なメディアダウンローダー。",
     aboutThanks: "スペシャルサンクス:",
     toastClipboardEmpty: "クリップボードが空か、有効なテキストリンクが含まれていません。",
@@ -2935,8 +2935,8 @@ const fallbackChains = {
 };
 
 // App Version Constants & GitHub Auto-Update Engine
-const APP_VERSION_NAME = "2.1.0";
-const APP_VERSION_CODE = 3;
+const APP_VERSION_NAME = "2.1.1";
+const APP_VERSION_CODE = 4;
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/nimidz/Nimiyo-Downloader/main/version.json";
 let latestUpdateInfo = null;
 
@@ -3109,9 +3109,38 @@ async function loadHistory() {
   }
 }
 
-// Save History to LocalStorage
+// Save History to LocalStorage with QuotaExceededError protection and auto-trimming
 function saveHistory() {
-  localStorage.setItem("nimiyo_history", JSON.stringify(localHistory));
+  try {
+    localStorage.setItem("nimiyo_history", JSON.stringify(localHistory));
+  } catch (e) {
+    console.warn("[STORAGE] localStorage write failed or quota exceeded, attempting auto-trim:", e);
+    try {
+      // Step 1: Strip large base64/thumbnail images from older history entries
+      if (Array.isArray(localHistory) && localHistory.length > 0) {
+        localHistory = localHistory.map((item, idx) => {
+          if (idx < localHistory.length - 10 && item && item.thumbnail && item.thumbnail.length > 400) {
+            const trimmed = { ...item };
+            delete trimmed.thumbnail;
+            return trimmed;
+          }
+          return item;
+        });
+        localStorage.setItem("nimiyo_history", JSON.stringify(localHistory));
+        return;
+      }
+    } catch (_) {}
+
+    try {
+      // Step 2: If still overflowing, retain only the newest 50 entries
+      if (Array.isArray(localHistory) && localHistory.length > 50) {
+        localHistory = localHistory.slice(-50);
+        localStorage.setItem("nimiyo_history", JSON.stringify(localHistory));
+      }
+    } catch (finalErr) {
+      console.error("[STORAGE] Critical localStorage save failure:", finalErr);
+    }
+  }
 }
 
 // Apply Dark Mode Class to Body & Document
@@ -5075,7 +5104,7 @@ function buildTargetFilename(dlItem, mediaResult, mediaCategory, platform, exten
   // Strip duplicate extension if present in title
   base = base.replace(/\.(mp4|mp3|png|jpg|jpeg|webp|m4a|wav|webm|mov)$/i, "").trim();
 
-  let cleaned = base.replace(/[\\/:*?"<>|#%&{}$!'@+`=]/g, "_");
+  let cleaned = base.replace(/[\\/:*?"<>|#%&{}$!'@+`=~]/g, "_");
   cleaned = cleaned.replace(/[\s_]+/g, "_").trim();
   cleaned = cleaned.replace(/^_+|_+$/g, "");
 

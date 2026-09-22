@@ -6,8 +6,7 @@
 
   **A Premium, Ultra-Fast & Lightweight Universal Media Downloader for Android**
 
-  [![Release](https://img.shields.io/badge/Release-v2.1.0--Lite-00C48C.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader/releases)
-  [![Platform](https://img.shields.io/badge/Platform-Android_10+-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader)
+  [![Release](https://img.shields.io/badge/Release-v2.1.1--Lite-00C48C.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader/releases)
   [![Design](https://img.shields.io/badge/Design-Neobrutalism_%26_SoftUI-FFE500.svg?style=for-the-badge&logoColor=black)](https://github.com/nimidz/Nimiyo-Downloader)
   [![License](https://img.shields.io/badge/License-GPL--3.0-black.svg?style=for-the-badge)](LICENSE)
   [![Trakteer](https://img.shields.io/badge/Support-Trakteer-be1e2d.svg?style=for-the-badge&logo=ko-fi&logoColor=white)](https://trakteer.id/nimidz)

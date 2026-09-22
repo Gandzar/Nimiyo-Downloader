@@ -685,6 +685,11 @@ class NimiyoMusicPlayer {
 
     this.audio.addEventListener("pause", () => {
       if (this.isStoppingPlayback) return;
+      // If audio paused naturally because it reached the end of the track, do NOT send
+      // a false PAUSE notification to Android, avoiding sticking at the final second before next track!
+      const isEnding = this.audio.ended || (this.audio.duration && Math.abs(this.audio.duration - this.audio.currentTime) < 0.6);
+      if (isEnding) return;
+
       this.isPlaying = false;
       this.updatePlaybackUiState(false);
       this.stopVisualizer();
@@ -843,6 +848,9 @@ class NimiyoMusicPlayer {
 
     this.updateTrackMetadataUi(track);
     this.updateMediaSessionMetadata(track);
+    this.isPlaying = Boolean(autoPlay);
+    // Immediately flip Android notification to the new track at 00:00
+    this.updateNativeNotification(this.isPlaying, 0);
     this.fetchAndApplyArtwork(track);
     this.fetchLyrics(track);
 
@@ -1573,6 +1581,26 @@ class NimiyoMusicPlayer {
     return null;
   }
 
+  saveLyricsToCache(trackKey, lyrics) {
+    try {
+      localStorage.setItem(trackKey, lyrics);
+    } catch (e) {
+      try {
+        const lrcKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith("nimiyo_lrc_")) {
+            lrcKeys.push(k);
+          }
+        }
+        for (let i = 0; i < Math.max(10, Math.ceil(lrcKeys.length / 2)); i++) {
+          if (lrcKeys[i]) localStorage.removeItem(lrcKeys[i]);
+        }
+        localStorage.setItem(trackKey, lyrics);
+      } catch (_) {}
+    }
+  }
+
   async fetchLyrics(track) {
     if (!track) return;
     const trackKey = `nimiyo_lrc_${track.id || track.filePath || (track.displayTitle + "_" + track.displayArtist)}`;
@@ -1614,7 +1642,7 @@ class NimiyoMusicPlayer {
           this.currentLyrics = res.lyrics.trim();
           this.parseLrcString(this.currentLyrics);
           if (this.parsedLrc.length > 0) {
-            try { localStorage.setItem(trackKey, this.currentLyrics); } catch (_) {}
+            this.saveLyricsToCache(trackKey, this.currentLyrics);
             this.updateLyricsBadgesAndRender();
             return;
           }
@@ -1633,7 +1661,7 @@ class NimiyoMusicPlayer {
       if (onlineLyrics && this.currentTrack && (this.currentTrack.id === track.id || this.currentTrack.filePath === track.filePath)) {
         this.currentLyrics = onlineLyrics.trim();
         this.parseLrcString(this.currentLyrics);
-        try { localStorage.setItem(trackKey, this.currentLyrics); } catch (_) {}
+        this.saveLyricsToCache(trackKey, this.currentLyrics);
       }
     } catch (err) {
       console.warn("[LYRICS] Fetch online error:", err);
@@ -2677,7 +2705,7 @@ class NimiyoMusicPlayer {
     }
   }
 
-  async updateNativeNotification(isPlaying) {
+  async updateNativeNotification(isPlaying, overridePosition = null) {
     const MediaSaver = window.Capacitor?.Plugins?.MediaSaver;
     if (MediaSaver && typeof MediaSaver.showMusicPlaybackNotification === "function") {
       try {
@@ -2689,7 +2717,9 @@ class NimiyoMusicPlayer {
           artwork = null;
         }
         const duration = this.currentTrack?.duration || Math.round((this.audio.duration || 0) * 1000);
-        const position = Math.round((this.audio.currentTime || 0) * 1000);
+        const position = (overridePosition !== null)
+          ? Math.round(overridePosition * 1000)
+          : Math.round((this.audio.currentTime || 0) * 1000);
 
         await MediaSaver.showMusicPlaybackNotification({
           title: title,
