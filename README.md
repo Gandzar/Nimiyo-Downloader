@@ -6,10 +6,10 @@
 
   **A Premium, Ultra-Fast & Lightweight Universal Media Downloader for Android**
 
-  [![Release](https://img.shields.io/badge/Release-v2.0.0--Lite-00C48C.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader/releases)
+  [![Release](https://img.shields.io/badge/Release-v2.1.0--Lite-00C48C.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader/releases)
   [![Platform](https://img.shields.io/badge/Platform-Android_10+-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white)](https://github.com/nimidz/Nimiyo-Downloader)
   [![Design](https://img.shields.io/badge/Design-Neobrutalism_%26_SoftUI-FFE500.svg?style=for-the-badge&logoColor=black)](https://github.com/nimidz/Nimiyo-Downloader)
-  [![License](https://img.shields.io/badge/License-MIT-black.svg?style=for-the-badge)](LICENSE)
+  [![License](https://img.shields.io/badge/License-GPL--3.0-black.svg?style=for-the-badge)](LICENSE)
   [![Trakteer](https://img.shields.io/badge/Support-Trakteer-be1e2d.svg?style=for-the-badge&logo=ko-fi&logoColor=white)](https://trakteer.id/nimidz)
 
   <br/>
@@ -28,58 +28,6 @@
   </p>
 
 </div>
-
----
-
-# Nimiyo v2.0.0 — What's New?
-
-## ✨ New
-
-- Added a new Soft UI Design, customizable from Settings → Appearance UI/UX.
-- Added Native Notifications for music playback, download progress, and other activities.
-- Added a new integrated Music App for playing downloaded music offline and viewing lyrics when available.
-- Added a new Navigation Bar for easier navigation.
-- Added Shopee as a new download platform with support for HD Shopee videos.
-- Added music-player functionality for playing audio files from the Nimiyo Audio folder.
-- Added the ability to select multiple songs for moving or deleting.
-- Added Playlist support to the Music Player.
-- Added a Video/Photo Media Player to Download History.
-
-## 🔐 New System Permissions
-
-- Added permission to access audio files for managing audio files across the device.
-- Added storage permission to allow deleting audio files directly from the Music Player.
-
-## 🐛 Fixed
-
-- Fixed Threads platform URL handling (www.threads.com).
-- Fixed Auto Paste Link functionality.
-- Fixed Auto-Analyze functionality when pasting links through keyboard suggestions (Gboard / autocomplete chip).
-- Fixed the Paste Icon not functioning.
-- Fixed downloaded media from QuickSave not being saved to History.
-- Fixed Native Notifications not appearing for certain tasks.
-- Fixed Duplicate Files settings so Skip and Overwrite options work correctly on Android storage.
-- Fixed Batch Photo Mode and the First Photo Only option for multi-photo / carousel content.
-- Fixed History Limit so history is trimmed immediately when the retention limit is changed.
-- Fixed Space Mono font installation to properly load from Google Fonts.
-
-## ⚙️ Improvements
-
-- Enabled Concurrent Downloads, allowing 2, 3, or 5 downloads to run simultaneously in parallel.
-- Added Auto-Retry and Max Retry handling when downloads are interrupted by unstable network conditions.
-- Enabled Wi-Fi Only downloads with real-time network connection detection.
-- Improved Clear Cache and Periodic Cache Cleanup to properly remove temporary files from storage.
-- Enabled Keep Screen Awake using the native Android Screen WakeLock.
-- Connected Auto-Play and Auto-Loop settings to the built-in Video Player.
-- Integrated i18n language translation throughout the Music Player.
-- Refactored platforms.js into separate platform files such as tiktok.js, instagram.js, etc. to reduce application size and make platform maintenance easier.
-
-## ⚠️ Known Issues
-
-- YouTube Music — currently not working properly.
-- Instagram Music — currently not working properly.
-- Facebook — server-related issues.
-- Pixiv — downloads can be slow and may fail.
 
 ---
 
