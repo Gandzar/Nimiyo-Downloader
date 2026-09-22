@@ -169,14 +169,14 @@ body.theme-softui .btn {
 
 body.theme-softui .primary-btn {
   background: var(--soft-accent-gradient) !important;
-  color: #18181B !important;
+  color: var(--accent-text, #18181B) !important;
   box-shadow: var(--soft-accent-shadow), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
   border: 1px solid rgba(255, 255, 255, 0.6) !important;
 }
 
 body.theme-softui .primary-btn:active {
   transform: translateY(1px) scale(0.98);
-  box-shadow: 0 2px 6px rgba(234, 179, 8, 0.25), inset 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: var(--soft-accent-shadow), inset 0 1px 3px rgba(0, 0, 0, 0.1) !important;
 }
 
 body.theme-softui .danger-btn {
@@ -722,6 +722,14 @@ body.theme-softui .mini-player-btn.play-btn {
   box-shadow: var(--soft-shadow-btn) !important;
 }
 
+body.theme-softui .mini-player-btn.minimize-btn {
+  background: var(--soft-surface) !important;
+  color: var(--soft-text-muted) !important;
+  border: 1px solid var(--soft-border-subtle) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+body.theme-softui .mini-player-btn.close-btn,
 body.theme-softui .mini-player-btn.minimize-red-btn {
   background: #f43f5e !important;
   color: #ffffff !important;
@@ -900,6 +908,106 @@ body.theme-softui .song-info-field {
 body.theme-softui.dark-mode .song-info-field {
   background: rgba(255, 255, 255, 0.04) !important;
   border-color: var(--soft-border) !important;
+}
+
+/* ==================================================== */
+/* Soft UI Accent Variations (Yellow, Blue, Red, Gray)  */
+/* ==================================================== */
+html.theme-softui[data-accent="yellow"],
+body.theme-softui[data-accent="yellow"] {
+  --accent-color: #FACC15;
+  --accent-hover: #EAB308;
+  --accent-text: #18181B;
+  --soft-primary: #FACC15;
+  --soft-accent-primary: #FACC15;
+  --soft-accent-gradient: linear-gradient(135deg, #FEF08A 0%, #FACC15 100%);
+  --soft-accent-hover: #EAB308;
+  --soft-accent-shadow: 0 4px 14px rgba(234, 179, 8, 0.35);
+}
+html.theme-softui.dark-mode[data-accent="yellow"],
+body.theme-softui.dark-mode[data-accent="yellow"] {
+  --accent-color: #F59E0B;
+  --accent-hover: #D97706;
+  --accent-text: #18181B;
+  --soft-primary: #F59E0B;
+  --soft-accent-primary: #F59E0B;
+  --soft-accent-gradient: linear-gradient(135deg, #FBBF24 0%, #D97706 100%);
+  --soft-accent-hover: #B45309;
+  --soft-accent-shadow: 0 4px 16px rgba(245, 158, 11, 0.25);
+}
+
+html.theme-softui[data-accent="blue"],
+body.theme-softui[data-accent="blue"] {
+  --accent-color: #2563EB;
+  --accent-hover: #1D4ED8;
+  --accent-text: #FFFFFF;
+  --soft-primary: #2563EB;
+  --soft-accent-primary: #2563EB;
+  --soft-accent-gradient: linear-gradient(135deg, #60A5FA 0%, #2563EB 100%);
+  --soft-accent-hover: #1D4ED8;
+  --soft-accent-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+html.theme-softui.dark-mode[data-accent="blue"],
+body.theme-softui.dark-mode[data-accent="blue"] {
+  --accent-color: #3B82F6;
+  --accent-hover: #2563EB;
+  --accent-text: #FFFFFF;
+  --soft-primary: #3B82F6;
+  --soft-accent-primary: #3B82F6;
+  --soft-accent-gradient: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  --soft-accent-hover: #1E40AF;
+  --soft-accent-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+}
+
+html.theme-softui[data-accent="red"],
+body.theme-softui[data-accent="red"] {
+  --accent-color: #EF4444;
+  --accent-hover: #DC2626;
+  --accent-text: #FFFFFF;
+  --soft-primary: #EF4444;
+  --soft-accent-primary: #EF4444;
+  --soft-accent-gradient: linear-gradient(135deg, #F87171 0%, #EF4444 100%);
+  --soft-accent-hover: #DC2626;
+  --soft-accent-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+}
+html.theme-softui.dark-mode[data-accent="red"],
+body.theme-softui.dark-mode[data-accent="red"] {
+  --accent-color: #F87171;
+  --accent-hover: #EF4444;
+  --accent-text: #FFFFFF;
+  --soft-primary: #F87171;
+  --soft-accent-primary: #F87171;
+  --soft-accent-gradient: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%);
+  --soft-accent-hover: #991B1B;
+  --soft-accent-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+}
+
+html.theme-softui[data-accent="gray"],
+body.theme-softui[data-accent="gray"] {
+  --accent-color: #64748B;
+  --accent-hover: #475569;
+  --accent-text: #FFFFFF;
+  --soft-primary: #64748B;
+  --soft-accent-primary: #64748B;
+  --soft-accent-gradient: linear-gradient(135deg, #94A3B8 0%, #64748B 100%);
+  --soft-accent-hover: #475569;
+  --soft-accent-shadow: 0 4px 14px rgba(100, 116, 139, 0.35);
+}
+html.theme-softui.dark-mode[data-accent="gray"],
+body.theme-softui.dark-mode[data-accent="gray"] {
+  --accent-color: #94A3B8;
+  --accent-hover: #64748B;
+  --accent-text: #FFFFFF;
+  --soft-primary: #94A3B8;
+  --soft-accent-primary: #94A3B8;
+  --soft-accent-gradient: linear-gradient(135deg, #94A3B8 0%, #475569 100%);
+  --soft-accent-hover: #334155;
+  --soft-accent-shadow: 0 4px 16px rgba(148, 163, 184, 0.3);
+}
+
+body.theme-softui .accent-color-dot {
+  border: 1px solid var(--soft-border) !important;
+  box-shadow: var(--soft-shadow-card-sm) !important;
 }
 
 

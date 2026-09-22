@@ -103,6 +103,15 @@ public class MediaSaverPlugin extends Plugin {
                 becomingNoisyReceiver = null;
             } catch (Exception ignored) {}
         }
+        try {
+            Intent intent = new Intent(getContext(), MusicPlaybackService.class);
+            intent.setAction(MusicPlaybackService.ACTION_CLEAR);
+            getContext().startService(intent);
+            NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.cancel(MUSIC_NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
         if (instance == this) {
             instance = null;
         }
@@ -280,6 +289,10 @@ public class MediaSaverPlugin extends Plugin {
             Intent intent = new Intent(getContext(), MusicPlaybackService.class);
             intent.setAction(MusicPlaybackService.ACTION_CLEAR);
             getContext().startService(intent);
+            NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.cancel(MUSIC_NOTIFICATION_ID);
+            }
             call.resolve(new JSObject().put("success", true));
         } catch (Exception e) {
             call.reject("Clear music notification failed: " + e.getMessage());
@@ -460,6 +473,8 @@ public class MediaSaverPlugin extends Plugin {
                 } else if ("audio".equalsIgnoreCase(fileType) || lowerFileName.endsWith(".mp3") ||
                            lowerFileName.endsWith(".m4a") || lowerFileName.endsWith(".wav") || lowerFileName.endsWith(".flac")) {
                     targetSubFolder = "AudioYo";
+                } else if ("apk".equalsIgnoreCase(fileType) || lowerFileName.endsWith(".apk")) {
+                    targetSubFolder = "";
                 } else {
                     targetSubFolder = "VideoYo";
                 }
@@ -532,6 +547,8 @@ public class MediaSaverPlugin extends Plugin {
                     if (lowerFileName.endsWith(".m4a")) mime = "audio/mp4";
                     else if (lowerFileName.endsWith(".wav")) mime = "audio/wav";
                     else if (lowerFileName.endsWith(".flac")) mime = "audio/flac";
+                } else if ("apk".equalsIgnoreCase(fileType) || lowerFileName.endsWith(".apk")) {
+                    mime = "application/vnd.android.package-archive";
                 } else {
                     mime = "video/mp4";
                     if (lowerFileName.endsWith(".webm")) mime = "video/webm";
@@ -542,10 +559,19 @@ public class MediaSaverPlugin extends Plugin {
 
                 Uri collectionUri;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                    if (subFolder == null || subFolder.trim().isEmpty()) {
+                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    } else {
+                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                    }
                     collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
                 } else {
-                    File publicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder);
+                    File publicDir;
+                    if (subFolder == null || subFolder.trim().isEmpty()) {
+                        publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    } else {
+                        publicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder);
+                    }
                     if (!publicDir.exists()) {
                         publicDir.mkdirs();
                     }
@@ -692,6 +718,9 @@ public class MediaSaverPlugin extends Plugin {
                 mime = "video/mp4";
                 if (lowerFileName.endsWith(".webm")) mime = "video/webm";
                 else if (lowerFileName.endsWith(".mov")) mime = "video/quicktime";
+            } else if ("apk".equalsIgnoreCase(fileType) || lowerFileName.endsWith(".apk")) {
+                subFolder = "";
+                mime = "application/vnd.android.package-archive";
             } else {
                 subFolder = "ETC";
                 mime = "application/octet-stream";
@@ -720,10 +749,19 @@ public class MediaSaverPlugin extends Plugin {
             
             Uri collectionUri;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                if (subFolder == null || subFolder.trim().isEmpty()) {
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                } else {
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nimiyo/" + subFolder);
+                }
                 collectionUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
             } else {
-                File publicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder);
+                File publicDir;
+                if (subFolder == null || subFolder.trim().isEmpty()) {
+                    publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                } else {
+                    publicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nimiyo/" + subFolder);
+                }
                 if (!publicDir.exists()) {
                     publicDir.mkdirs();
                 }
@@ -878,39 +916,61 @@ public class MediaSaverPlugin extends Plugin {
     private File resolveMediaFile(String subFolder, String fileName) {
         if (fileName == null || fileName.trim().isEmpty()) return null;
 
-        File publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        String decodedName = fileName.trim();
+        try {
+            decodedName = java.net.URLDecoder.decode(decodedName, "UTF-8");
+        } catch (Exception ignored) {}
 
-        // 1. Direct candidate paths
-        File[] exactCandidates = new File[]{
-            new File(publicDownloads, "Nimiyo/" + subFolder + "/" + fileName),
-            new File(publicDownloads, "Nimiyo/" + fileName),
-            new File(publicDownloads, subFolder + "/" + fileName),
-            new File(publicDownloads, fileName)
-        };
-        for (File f : exactCandidates) {
-            if (f.exists() && f.isFile()) {
-                return f;
+        // Direct absolute path check
+        if (fileName.startsWith("/") && new File(fileName).isFile()) {
+            return new File(fileName);
+        }
+        if (decodedName.startsWith("/") && new File(decodedName).isFile()) {
+            return new File(decodedName);
+        }
+
+        File publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        String safeSubFolder = (subFolder != null && !subFolder.trim().isEmpty()) ? subFolder.trim() : "VideoYo";
+
+        // 1. Direct candidate paths (testing raw and decoded, with and without extensions)
+        String[] nameVariants = new String[]{ fileName, decodedName };
+        for (String nameVar : nameVariants) {
+            File[] exactCandidates = new File[]{
+                new File(publicDownloads, "Nimiyo/" + safeSubFolder + "/" + nameVar),
+                new File(publicDownloads, "Nimiyo/" + nameVar),
+                new File(publicDownloads, safeSubFolder + "/" + nameVar),
+                new File(publicDownloads, nameVar),
+                new File(publicDownloads, "Nimiyo/" + safeSubFolder + "/" + nameVar + ".mp4"),
+                new File(publicDownloads, "Nimiyo/" + safeSubFolder + "/" + nameVar + ".mp3")
+            };
+            for (File f : exactCandidates) {
+                if (f.exists() && f.isFile()) {
+                    return f;
+                }
             }
         }
 
         // 2. Directories to inspect for fuzzy matching
         File[] dirsToScan = new File[]{
-            new File(publicDownloads, "Nimiyo/" + subFolder),
+            new File(publicDownloads, "Nimiyo/" + safeSubFolder),
+            new File(publicDownloads, "Nimiyo/VideoYo"),
+            new File(publicDownloads, "Nimiyo/AudioYo"),
+            new File(publicDownloads, "Nimiyo/ImageYo"),
             new File(publicDownloads, "Nimiyo"),
-            new File(publicDownloads, subFolder),
+            new File(publicDownloads, safeSubFolder),
             publicDownloads
         };
 
         // Separate stem and extension
         String ext = "";
-        String stem = fileName;
-        int dotIdx = fileName.lastIndexOf('.');
+        String stem = decodedName;
+        int dotIdx = decodedName.lastIndexOf('.');
         if (dotIdx > 0) {
-            ext = fileName.substring(dotIdx);
-            stem = fileName.substring(0, dotIdx);
+            ext = decodedName.substring(dotIdx);
+            stem = decodedName.substring(0, dotIdx);
         }
-        // Remove trailing " (1)", " (2)", etc. from stem to get canonical base name
-        String rootStem = stem.replaceAll("\\s*\\(\\d+\\)$", "").trim();
+        // Remove trailing " (1)", " (2)", "_1", "_2" from stem to get canonical base name
+        String rootStem = stem.replaceAll("\\s*\\(\\d+\\)$", "").replaceAll("_\\d+$", "").trim();
         String cleanRoot = rootStem.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
 
         for (File dir : dirsToScan) {
@@ -925,13 +985,14 @@ public class MediaSaverPlugin extends Plugin {
                         String fName = f.getName();
 
                         boolean matches = false;
-                        if (fName.equalsIgnoreCase(fileName)) {
+                        if (fName.equalsIgnoreCase(fileName) || fName.equalsIgnoreCase(decodedName)) {
                             matches = true;
                         } else if (fName.startsWith(rootStem) && (ext.isEmpty() || fName.toLowerCase().endsWith(ext.toLowerCase()))) {
                             matches = true;
                         } else if (!cleanRoot.isEmpty()) {
                             String cleanName = fName.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
-                            if (cleanName.contains(cleanRoot) && (ext.isEmpty() || fName.toLowerCase().endsWith(ext.toLowerCase()))) {
+                            if ((cleanName.contains(cleanRoot) || cleanRoot.contains(cleanName)) &&
+                                (ext.isEmpty() || fName.toLowerCase().endsWith(ext.toLowerCase()) || cleanRoot.length() > 6)) {
                                 matches = true;
                             }
                         }
@@ -991,8 +1052,18 @@ public class MediaSaverPlugin extends Plugin {
                 return;
             }
 
+            Uri contentUri = null;
+            try {
+                contentUri = FileProvider.getUriForFile(context, context.getPackageName() + ".fileprovider", mediaFile);
+            } catch (Exception ignored) {}
+
             Intent intent = new Intent(context, VideoPlayerActivity.class);
             intent.putExtra(VideoPlayerActivity.EXTRA_FILE_PATH, mediaFile.getAbsolutePath());
+            if (contentUri != null) {
+                intent.putExtra(VideoPlayerActivity.EXTRA_URI, contentUri.toString());
+                intent.setDataAndType(contentUri, "video/*");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
             if (title != null && !title.trim().isEmpty()) {
                 intent.putExtra(VideoPlayerActivity.EXTRA_TITLE, title);
             } else {

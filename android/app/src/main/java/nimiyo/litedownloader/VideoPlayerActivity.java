@@ -127,12 +127,28 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
         });
 
-        // Set Video Source
+        // Set Video Source via FileProvider Content URI
         try {
-            if (filePath != null && new File(filePath).exists()) {
-                videoView.setVideoPath(filePath);
-            } else if (uriStr != null && !uriStr.isEmpty()) {
-                videoView.setVideoURI(Uri.parse(uriStr));
+            Uri videoUri = getIntent().getData();
+            if (videoUri == null && uriStr != null && !uriStr.isEmpty()) {
+                try {
+                    videoUri = Uri.parse(uriStr);
+                } catch (Exception ignored) {}
+            }
+
+            if (videoUri == null && filePath != null) {
+                File file = new File(filePath);
+                if (file.exists()) {
+                    try {
+                        videoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+                    } catch (Exception fpEx) {
+                        videoUri = Uri.fromFile(file);
+                    }
+                }
+            }
+
+            if (videoUri != null) {
+                videoView.setVideoURI(videoUri);
             } else {
                 Toast.makeText(this, "Berkas video tidak ditemukan", Toast.LENGTH_SHORT).show();
                 finish();
@@ -177,8 +193,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         videoView.setOnErrorListener((mp, what, extra) -> {
             loadingProgress.setVisibility(View.GONE);
-            Toast.makeText(this, "Gagal memutar format video", Toast.LENGTH_SHORT).show();
-            return false;
+            openInExternalPlayer();
+            return true;
         });
 
         updateFullscreenButtonIcon();
@@ -316,6 +332,45 @@ public class VideoPlayerActivity extends AppCompatActivity {
         } catch (Exception e) {
             Toast.makeText(this, "Gagal membagikan video: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void openInExternalPlayer() {
+        try {
+            Uri videoUri = getIntent().getData();
+            String uriStr = getIntent().getStringExtra(EXTRA_URI);
+            String filePath = getIntent().getStringExtra(EXTRA_FILE_PATH);
+
+            if (videoUri == null && uriStr != null && !uriStr.isEmpty()) {
+                try {
+                    videoUri = Uri.parse(uriStr);
+                } catch (Exception ignored) {}
+            }
+            if (videoUri == null && filePath != null) {
+                File file = new File(filePath);
+                if (file.exists()) {
+                    try {
+                        videoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+                    } catch (Exception fpEx) {
+                        videoUri = Uri.fromFile(file);
+                    }
+                }
+            }
+
+            if (videoUri != null) {
+                Intent extIntent = new Intent(Intent.ACTION_VIEW);
+                extIntent.setDataAndType(videoUri, "video/*");
+                extIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(extIntent, "Buka video dengan"));
+                finish();
+                return;
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Gagal memutar video: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
+        Toast.makeText(this, "Gagal memutar format video", Toast.LENGTH_SHORT).show();
+        finish();
     }
 
     private String formatTime(int millis) {

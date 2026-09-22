@@ -151,6 +151,7 @@ class NimiyoMusicPlayer {
       miniPlayerVisualizer: document.getElementById("miniPlayerVisualizer"),
       miniPlayerPlayBtn: document.getElementById("miniPlayerPlayBtn"),
       miniPlayerMinimizeBtn: document.getElementById("miniPlayerMinimizeBtn"),
+      miniPlayerCloseBtn: document.getElementById("miniPlayerCloseBtn"),
       miniPlayerCompactPlayBtn: document.getElementById("miniPlayerCompactPlayBtn"),
       miniPlayerProgress: document.getElementById("miniPlayerProgress"),
 
@@ -525,8 +526,12 @@ class NimiyoMusicPlayer {
 
     for (const track of this.allTracks) {
       // Clean fallback strings
-      const title = track.title || track.fileName?.replace(/\.[^.]+$/, "") || this.t("musicUnknownTitle", "Untitled");
-      const artist = track.artist && track.artist.trim() ? track.artist.trim() : this.t("musicUnknownArtist", "Unknown Artist");
+      const rawTitle = track.title || track.fileName?.replace(/\.[^.]+$/, "") || "";
+      const rawArtist = track.artist && track.artist.trim() ? track.artist.trim() : "";
+      const cleaned = this.cleanTitleAndArtist(rawTitle, rawArtist);
+
+      const title = cleaned.title || rawTitle || this.t("musicUnknownTitle", "Untitled");
+      const artist = cleaned.artist || rawArtist || this.t("musicUnknownArtist", "Unknown Artist");
       const album = track.album && track.album.trim() ? track.album.trim() : this.t("musicUnknownAlbum", "Unknown Album");
 
       track.displayTitle = title;
@@ -679,6 +684,7 @@ class NimiyoMusicPlayer {
     });
 
     this.audio.addEventListener("pause", () => {
+      if (this.isStoppingPlayback) return;
       this.isPlaying = false;
       this.updatePlaybackUiState(false);
       this.stopVisualizer();
@@ -813,6 +819,17 @@ class NimiyoMusicPlayer {
     this.audio.playbackRate = this.playbackRate;
     this.audio.load();
 
+    // Immediately reset lyrics scroll & state to top on new song
+    this.activeLyricIndex = -1;
+    this.activeIntegratedLyricIndex = -1;
+    this.isUserScrollingLyrics = false;
+    if (this.elements.fullPlayerLyricsScroll) {
+      this.elements.fullPlayerLyricsScroll.scrollTop = 0;
+    }
+    if (this.elements.lyricsContent) {
+      this.elements.lyricsContent.scrollTop = 0;
+    }
+
     // Refresh lyrics stage state if active
     if (this.isLyricsModeActive) {
       this.elements.fullPlayerLyricsStage?.classList.remove("hidden");
@@ -840,6 +857,11 @@ class NimiyoMusicPlayer {
 
   async playTrackFromList(track, trackList = []) {
     if (!track) return;
+
+    if (this.currentTrack && this.currentTrack.id === track.id) {
+      this.togglePlay();
+      return;
+    }
 
     if (trackList && trackList.length > 0) {
       this.queue = [...trackList];
@@ -1372,29 +1394,54 @@ class NimiyoMusicPlayer {
   // Lyrics Engine (Online LRCLIB + Netease + Local Storage Cache + Embedded / Companion LRC)
   // -------------------------------------------------------------
   cleanTitleAndArtist(rawTitle, rawArtist) {
-    let title = rawTitle || "";
-    let artist = rawArtist || "";
+    let title = (rawTitle || "").trim();
+    let artist = (rawArtist || "").trim();
 
-    // Remove file extension
+    // 1. Remove file extensions
     title = title.replace(/\.(mp3|m4a|wav|ogg|flac|aac|opus|webm|mp4)$/i, "").trim();
 
-    // If artist is unknown or missing, check if title contains 'Artist - Title'
-    if ((!artist || artist.toLowerCase() === "unknown" || artist.toLowerCase() === "unknown artist" || artist.toLowerCase() === "tanpa artis") && title.includes(" - ")) {
+    // 2. Replace multiple underscores with spaces
+    if (title.includes("_")) {
+      title = title.replace(/_+/g, " ").trim();
+    }
+    if (artist.includes("_")) {
+      artist = artist.replace(/_+/g, " ").trim();
+    }
+
+    // 3. Remove trailing duplicate index numbers (e.g. " 6", " (1)", " 1")
+    title = title.replace(/\s*\(?\d+\)?$/, "").trim();
+
+    // 4. If artist is missing or unknown, check if title is "Artist - Title"
+    const isUnknownArtist = !artist || /^(unknown|unknown artist|tanpa artis|<unknown>)$/i.test(artist);
+    if (isUnknownArtist && title.includes(" - ")) {
       const parts = title.split(" - ");
       artist = parts[0].trim();
       title = parts.slice(1).join(" - ").trim();
     }
 
-    // Clean common YouTube / video / audio noise tags
+    // 5. Extract (feat. ...) from title if present
+    const featMatch = title.match(/[\(\[\{]\s*(?:feat\.?|ft\.?)\s+([^()\[\]{}]+)[\)\]\}]/i);
+    const featArtist = featMatch ? featMatch[1].trim() : "";
+
+    // 6. Clean common YouTube/video/audio noise tags
     title = title
-      .replace(/[\(\[\{][^\)\]\}]*(?:official|audio|video|lyric|lyrics|music video|mv|visualizer|hd|4k|hq|remaster|cover|live|clip|karaoke|full|version|prod)[^\)\]\}]*[\)\]\}]/gi, "")
-      .replace(/[\(\[\{]\s*(?:feat\.?|ft\.?)\s+[^)\]\}]+[\)\]\}]/gi, "")
+      .replace(/[\(\[\{][^\)\]\}]*(?:official|audio|video|lyric|lyrics|music video|mv|visualizer|hd|4k|hq|remaster|cover|live|clip|karaoke|full|version|prod|radio edit)[^\)\]\}]*[\)\]\}]/gi, "")
+      .replace(/[\(\[\{]\s*(?:feat\.?|ft\.?)\s+[^()\[\]{}]+[\)\]\}]/gi, "")
       .replace(/\s*\|\s*.*$/g, "")
-      .replace(/\s*-\s*.*Official.*$/gi, "")
+      .replace(/\s*-\s*.*(?:Official|Radio Edit).*$/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    return { title, artist };
+    // 7. Normalize contractions e.g. "Don t" -> "Don't"
+    title = title.replace(/\b([Dd]on|[Cc]an|[Ww]on|[Ii]t|[Yy]ou|[Dd]oesn|[Ww]ouldn|[Ss]houldn)\s+([tsdremlv]{1,2})\b/g, "$1'$2");
+
+    // 8. Primary artist (first before comma, &, /, or feat)
+    let primaryArtist = artist;
+    if (primaryArtist) {
+      primaryArtist = primaryArtist.split(/[,&/]|(?:\s+feat\.?\s+)|(?:\s+ft\.?\s+)/i)[0].trim();
+    }
+
+    return { title, artist, primaryArtist, featArtist };
   }
 
   async requestLyricsHttp(url) {
@@ -1436,53 +1483,89 @@ class NimiyoMusicPlayer {
   }
 
   async fetchOnlineLyrics(track) {
-    const { title, artist } = this.cleanTitleAndArtist(track.displayTitle || track.title, track.displayArtist || track.artist);
+    const { title, artist, primaryArtist, featArtist } = this.cleanTitleAndArtist(track.displayTitle || track.title, track.displayArtist || track.artist);
     if (!title) return null;
 
-    const duration = Math.round(track.duration ? (track.duration > 1000 ? track.duration / 1000 : track.duration) : (this.audio.duration || 0));
+    const trackDuration = Math.round(track.duration ? (track.duration > 1000 ? track.duration / 1000 : track.duration) : (this.audio.duration || 0));
 
-    // 1. Try LRCLIB exact match
-    try {
-      const params = new URLSearchParams();
-      params.append("track_name", title);
-      if (artist && artist.toLowerCase() !== "unknown" && artist.toLowerCase() !== "unknown artist" && artist.toLowerCase() !== "tanpa artis") {
-        params.append("artist_name", artist);
-      }
-      if (duration > 15) {
-        params.append("duration", duration);
-      }
-      const url = `https://lrclib.net/api/get?${params.toString()}`;
-      const data = await this.requestLyricsHttp(url);
-      if (data && (data.syncedLyrics || data.plainLyrics)) {
-        return data.syncedLyrics || data.plainLyrics;
-      }
-    } catch (_) {}
+    // Helper: evaluate and score candidate lyrics
+    const pickBestLyrics = (list) => {
+      if (!Array.isArray(list) || list.length === 0) return null;
 
-    // 2. Try LRCLIB search query fallback
-    try {
-      const query = (artist && artist.toLowerCase() !== "unknown" && artist.toLowerCase() !== "tanpa artis" ? artist + " " : "") + title;
-      const url = `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`;
-      const list = await this.requestLyricsHttp(url);
-      if (Array.isArray(list) && list.length > 0) {
-        const withSynced = list.find(item => item.syncedLyrics);
-        const match = withSynced || list[0];
-        if (match && (match.syncedLyrics || match.plainLyrics)) {
-          return match.syncedLyrics || match.plainLyrics;
+      // 1. First priority: candidate with syncedLyrics
+      const syncedCandidates = list.filter(item => item.syncedLyrics && typeof item.syncedLyrics === "string" && item.syncedLyrics.trim().length > 0);
+      if (syncedCandidates.length > 0) {
+        if (trackDuration > 15) {
+          syncedCandidates.sort((a, b) => {
+            const diffA = Math.abs((a.duration || 0) - trackDuration);
+            const diffB = Math.abs((b.duration || 0) - trackDuration);
+            return diffA - diffB;
+          });
         }
+        return syncedCandidates[0].syncedLyrics.trim();
       }
-    } catch (_) {}
 
-    // 3. Try Netease Cloud Music lyrics API fallback
+      // 2. Second priority: candidate with plainLyrics
+      const plainCandidates = list.filter(item => item.plainLyrics && typeof item.plainLyrics === "string" && item.plainLyrics.trim().length > 0);
+      if (plainCandidates.length > 0) {
+        if (trackDuration > 15) {
+          plainCandidates.sort((a, b) => {
+            const diffA = Math.abs((a.duration || 0) - trackDuration);
+            const diffB = Math.abs((b.duration || 0) - trackDuration);
+            return diffA - diffB;
+          });
+        }
+        return plainCandidates[0].plainLyrics.trim();
+      }
+
+      return null;
+    };
+
+    // Strategy 1: LRCLIB exact get with primaryArtist or artist
+    const artistsToTry = [primaryArtist, artist, featArtist].filter(Boolean);
+    for (const art of artistsToTry) {
+      try {
+        const params = new URLSearchParams();
+        params.append("track_name", title);
+        params.append("artist_name", art);
+        const url = `https://lrclib.net/api/get?${params.toString()}`;
+        const data = await this.requestLyricsHttp(url);
+        if (data && data.syncedLyrics && data.syncedLyrics.trim().length > 0) {
+          return data.syncedLyrics.trim();
+        }
+      } catch (_) {}
+    }
+
+    // Strategy 2: LRCLIB search queries (most specific to general)
+    const queries = [];
+    if (primaryArtist) queries.push(`${primaryArtist} ${title}`);
+    if (artist && artist !== primaryArtist) queries.push(`${artist} ${title}`);
+    if (featArtist) queries.push(`${title} ${featArtist}`);
+    queries.push(title);
+
+    for (const q of queries) {
+      try {
+        const url = `https://lrclib.net/api/search?q=${encodeURIComponent(q)}`;
+        const list = await this.requestLyricsHttp(url);
+        const best = pickBestLyrics(list);
+        if (best) return best;
+      } catch (_) {}
+    }
+
+    // Strategy 3: Netease Cloud Music fallback
     try {
-      const query = (artist && artist.toLowerCase() !== "unknown" && artist.toLowerCase() !== "tanpa artis" ? artist + " " : "") + title;
-      const sUrl = `https://music.xianqiao.wang/neteaseapiv2/search?keywords=${encodeURIComponent(query)}&limit=1`;
+      const q = (primaryArtist ? primaryArtist + " " : "") + title;
+      const sUrl = `https://music.xianqiao.wang/neteaseapiv2/search?keywords=${encodeURIComponent(q)}&limit=5`;
       const sData = await this.requestLyricsHttp(sUrl);
-      const songId = sData?.result?.songs?.[0]?.id;
-      if (songId) {
-        const lyrUrl = `https://music.xianqiao.wang/neteaseapiv2/lyric?id=${songId}`;
-        const lyrData = await this.requestLyricsHttp(lyrUrl);
-        if (lyrData?.lrc?.lyric) {
-          return lyrData.lrc.lyric;
+      const songs = sData?.result?.songs || [];
+      for (const song of songs) {
+        if (song?.id) {
+          const lyrUrl = `https://music.xianqiao.wang/neteaseapiv2/lyric?id=${song.id}`;
+          const lyrData = await this.requestLyricsHttp(lyrUrl);
+          const lrc = lyrData?.lrc?.lyric;
+          if (lrc && lrc.trim() && /\[\d{1,2}:\d{2}/.test(lrc)) {
+            return lrc.trim();
+          }
         }
       }
     } catch (_) {}
@@ -1497,15 +1580,28 @@ class NimiyoMusicPlayer {
     this.parsedLrc = [];
     this.activeLyricIndex = -1;
     this.activeIntegratedLyricIndex = -1;
+    this.isUserScrollingLyrics = false;
+    if (this.elements.fullPlayerLyricsScroll) {
+      this.elements.fullPlayerLyricsScroll.scrollTop = 0;
+    }
+    if (this.elements.lyricsContent) {
+      this.elements.lyricsContent.scrollTop = 0;
+    }
 
-    // 1. Check LocalStorage Cache first
+    // 1. Check LocalStorage Cache
     try {
       const cached = localStorage.getItem(trackKey);
       if (cached && cached.trim()) {
         this.currentLyrics = cached.trim();
         this.parseLrcString(this.currentLyrics);
-        this.updateLyricsBadgesAndRender();
-        return;
+        // If cached lyrics have real timestamps, we are good to go!
+        if (this.parsedLrc.length > 0 && /\[\d{1,2}:\d{2}/.test(cached)) {
+          this.updateLyricsBadgesAndRender();
+          return;
+        } else {
+          // If cached lyrics are only plain text, render them immediately but continue online fetch to upgrade!
+          this.updateLyricsBadgesAndRender();
+        }
       }
     } catch (_) {}
 
@@ -1517,9 +1613,11 @@ class NimiyoMusicPlayer {
         if (res && res.hasLyrics && res.lyrics) {
           this.currentLyrics = res.lyrics.trim();
           this.parseLrcString(this.currentLyrics);
-          try { localStorage.setItem(trackKey, this.currentLyrics); } catch (_) {}
-          this.updateLyricsBadgesAndRender();
-          return;
+          if (this.parsedLrc.length > 0) {
+            try { localStorage.setItem(trackKey, this.currentLyrics); } catch (_) {}
+            this.updateLyricsBadgesAndRender();
+            return;
+          }
         }
       } catch (_) {}
     }
@@ -1599,6 +1697,9 @@ class NimiyoMusicPlayer {
       });
 
       // Bind interactive scroll/drag seeking
+      if (this.elements.fullPlayerLyricsScroll) {
+        this.elements.fullPlayerLyricsScroll.scrollTop = 0;
+      }
       this.setupFlowingLyricsScrollListener();
       this.syncIntegratedLyrics(this.audio.currentTime || 0, true);
     } else if (this.isFetchingLyrics) {
@@ -1734,6 +1835,23 @@ class NimiyoMusicPlayer {
     }
   }
 
+  generateEstimatedLrcFromPlainText(plainText, trackDuration) {
+    if (!plainText) return [];
+    const rawLines = plainText.split("\n").map(l => l.trim()).filter(Boolean);
+    if (rawLines.length === 0) return [];
+
+    const duration = trackDuration > 20 ? trackDuration : (this.audio.duration || 180);
+    const startTime = Math.min(5, duration * 0.05);
+    const endTime = Math.max(startTime + 10, duration * 0.95);
+    const timeSpan = endTime - startTime;
+    const interval = timeSpan / rawLines.length;
+
+    return rawLines.map((line, idx) => ({
+      time: startTime + (idx * interval),
+      text: line
+    }));
+  }
+
   syncIntegratedLyrics(currentTime, forceScroll = false) {
     if (this.parsedLrc.length === 0 || !this.isLyricsModeActive || !this.elements.fullPlayerLyricsScroll) {
       return;
@@ -1757,12 +1875,25 @@ class NimiyoMusicPlayer {
         lines[i].classList.toggle("active", i === activeIdx);
       }
 
-      // Smooth auto-scroll only if user is not touching/dragging
+      // Smooth auto-scroll to center active line or top if not started yet
       if (activeIdx >= 0 && (!this.isUserScrollingLyrics || forceScroll)) {
         const activeEl = document.getElementById(`flowing-lyric-${activeIdx}`);
         if (activeEl) {
-          activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          const containerHeight = scrollEl.clientHeight;
+          const elTop = activeEl.offsetTop;
+          const elHeight = activeEl.offsetHeight;
+          const targetTop = elTop - (containerHeight / 2) + (elHeight / 2);
+          scrollEl.scrollTo({
+            top: Math.max(0, targetTop),
+            behavior: forceScroll ? "auto" : "smooth"
+          });
         }
+      } else if (activeIdx < 0 && (!this.isUserScrollingLyrics || forceScroll)) {
+        // Even if lyric line hasn't started yet (intro/music), scroll to top immediately!
+        scrollEl.scrollTo({
+          top: 0,
+          behavior: forceScroll ? "auto" : "smooth"
+        });
       }
     }
   }
@@ -1771,17 +1902,24 @@ class NimiyoMusicPlayer {
     this.parsedLrc = [];
     if (!raw) return;
 
-    const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+    const timeRegex = /\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
     const lines = raw.split("\n");
 
     for (const line of lines) {
+      if (/^\[(ti|ar|al|by|offset|length|re|ve):/i.test(line.trim())) continue;
       const matches = [...line.matchAll(timeRegex)];
       if (matches.length > 0) {
-        const cleanText = line.replace(timeRegex, "").trim();
+        let cleanText = line.replace(timeRegex, "").replace(/<[^>]+>/g, "").trim();
         for (const match of matches) {
           const mins = parseInt(match[1], 10);
           const secs = parseInt(match[2], 10);
-          const ms = match[3] ? (match[3].length === 2 ? parseInt(match[3], 10) * 10 : parseInt(match[3], 10)) : 0;
+          let ms = 0;
+          if (match[3]) {
+            const rawMs = match[3];
+            if (rawMs.length === 1) ms = parseInt(rawMs, 10) * 100;
+            else if (rawMs.length === 2) ms = parseInt(rawMs, 10) * 10;
+            else ms = parseInt(rawMs.substring(0, 3), 10);
+          }
           const totalSec = mins * 60 + secs + (ms / 1000);
           this.parsedLrc.push({ time: totalSec, text: cleanText });
         }
@@ -1790,6 +1928,12 @@ class NimiyoMusicPlayer {
 
     // Sort chronologically by timestamp
     this.parsedLrc.sort((a, b) => a.time - b.time);
+
+    // If no timestamps found but plain text exists, create estimated timestamps so lyrics always advance!
+    if (this.parsedLrc.length === 0 && raw.trim().length > 0) {
+      const dur = this.currentTrack?.duration ? (this.currentTrack.duration > 1000 ? this.currentTrack.duration / 1000 : this.currentTrack.duration) : (this.audio.duration || 0);
+      this.parsedLrc = this.generateEstimatedLrcFromPlainText(raw, dur);
+    }
   }
 
   renderLyricsModal() {
@@ -1863,6 +2007,10 @@ class NimiyoMusicPlayer {
         const activeEl = document.getElementById(`lyric-line-${activeIdx}`);
         if (activeEl) {
           activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      } else {
+        if (this.elements.lyricsContent) {
+          this.elements.lyricsContent.scrollTop = 0;
         }
       }
     }
@@ -2013,13 +2161,17 @@ class NimiyoMusicPlayer {
     const listPlaceholder = "nimiyo_icon.webp";
     const html = tracks.map((track, idx) => {
       const isCurrent = this.currentTrack && this.currentTrack.id === track.id;
+      const isCurrentPlaying = isCurrent && this.isPlaying;
       const isSelected = this.isSelectionMode && this.selectedTrackIds.has(track.id);
       const durStr = track.duration > 0 ? this.formatTime(track.duration / 1000) : "--:--";
       const lyricsBadge = track.hasLyrics ? `<span class="badge-lyrics" title="Lyrics available">LRC</span>` : "";
       const initialThumb = (this.artworkCache.get(track.id) || track.artwork || track.thumbnail || listPlaceholder);
+      const overlaySvg = isCurrentPlaying
+        ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`
+        : `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
 
       return `
-        <div class="song-card ${isCurrent ? 'now-playing' : ''} ${isSelected ? 'selected' : ''}" data-track-id="${track.id}" data-idx="${idx}">
+        <div class="song-card ${isCurrent ? 'now-playing' : ''} ${isCurrentPlaying ? 'is-playing' : ''} ${isSelected ? 'selected' : ''}" data-track-id="${track.id}" data-idx="${idx}">
           <div class="song-select-checkbox">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3">
               <polyline points="20 6 9 17 4 12"></polyline>
@@ -2028,9 +2180,7 @@ class NimiyoMusicPlayer {
           <div class="song-art-wrapper">
             <img class="song-art-thumb lazy-art" data-track-id="${track.id}" src="${initialThumb}" onerror="this.onerror=null;this.src='${listPlaceholder}';" alt="Art">
             <div class="song-play-overlay">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
+              ${overlaySvg}
             </div>
           </div>
           <div class="song-info">
@@ -2399,8 +2549,42 @@ class NimiyoMusicPlayer {
     if (this.elements.lyricsMiniTitle) this.elements.lyricsMiniTitle.innerText = track.displayTitle;
     if (this.elements.lyricsMiniArtist) this.elements.lyricsMiniArtist.innerText = track.displayArtist;
 
+    this.updateTrackItemIcons(this.isPlaying);
+  }
+
+  updateTrackItemIcons(isPlaying) {
+    const cardPlayIcon = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
+    const cardPauseIcon = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
+
     document.querySelectorAll(".song-card").forEach(c => {
-      c.classList.toggle("now-playing", c.getAttribute("data-track-id") === track.id);
+      const isCurrent = this.currentTrack && c.getAttribute("data-track-id") === this.currentTrack.id;
+      c.classList.toggle("now-playing", isCurrent);
+      c.classList.toggle("is-playing", isCurrent && isPlaying);
+      const overlay = c.querySelector(".song-play-overlay");
+      if (overlay) {
+        overlay.innerHTML = (isCurrent && isPlaying) ? cardPauseIcon : cardPlayIcon;
+      }
+    });
+
+    document.querySelectorAll(".playlist-track-item").forEach(item => {
+      const isCurrent = this.currentTrack && item.getAttribute("data-track-id") === this.currentTrack.id;
+      item.classList.toggle("active-playing", isCurrent);
+      item.classList.toggle("is-playing", isCurrent && isPlaying);
+      const overlay = item.querySelector(".playlist-play-overlay");
+      if (overlay) {
+        overlay.innerHTML = (isCurrent && isPlaying) ? cardPauseIcon : cardPlayIcon;
+        overlay.classList.toggle("active", isCurrent);
+      }
+    });
+
+    document.querySelectorAll(".queue-item").forEach(item => {
+      const idx = parseInt(item.getAttribute("data-queue-idx"), 10);
+      const isCurrent = idx === this.queueIndex;
+      item.classList.toggle("active", isCurrent);
+      const idxEl = item.querySelector(".queue-idx");
+      if (idxEl) {
+        idxEl.innerText = isCurrent ? (isPlaying ? '⏸' : '▶') : (idx + 1);
+      }
     });
   }
 
@@ -2419,6 +2603,8 @@ class NimiyoMusicPlayer {
     if (this.elements.fullPlayerPlayBtn) {
       this.elements.fullPlayerPlayBtn.innerHTML = isPlaying ? pauseIconSvg : playIconSvg;
     }
+
+    this.updateTrackItemIcons(isPlaying);
   }
 
   updateProgressUi(cur, dur) {
@@ -2570,6 +2756,34 @@ class NimiyoMusicPlayer {
     }
   }
 
+  async stopPlayback() {
+    this.isStoppingPlayback = true;
+    try {
+      this.audio.pause();
+      this.audio.currentTime = 0;
+      this.isPlaying = false;
+      this.updatePlaybackUiState(false);
+      this.stopVisualizer();
+      if ("mediaSession" in navigator) {
+        try {
+          navigator.mediaSession.playbackState = "none";
+        } catch (_) {}
+      }
+      await this.clearNativeNotification();
+      this.hideMiniPlayer();
+      this.closeFullPlayer();
+      this.expandMiniPlayer();
+      this.updateProgressUi(0, 0);
+      if (window.triggerHaptic) window.triggerHaptic();
+    } catch (err) {
+      console.warn("[MUSIC] stopPlayback error:", err);
+    } finally {
+      setTimeout(() => {
+        this.isStoppingPlayback = false;
+      }, 300);
+    }
+  }
+
   openQueueModal() {
     this.renderQueueModal();
     if (this.elements.queueModal) {
@@ -2684,7 +2898,7 @@ class NimiyoMusicPlayer {
       const isCurrent = idx === this.queueIndex;
       return `
         <div class="queue-item ${isCurrent ? 'active' : ''}" data-queue-idx="${idx}">
-          <div class="queue-idx">${isCurrent ? '▶' : idx + 1}</div>
+          <div class="queue-idx">${isCurrent ? (this.isPlaying ? '⏸' : '▶') : idx + 1}</div>
           <div class="queue-info">
             <span class="queue-title">${this.escapeHtml(track.displayTitle)}</span>
             <span class="queue-artist">${this.escapeHtml(track.displayArtist)}</span>
@@ -3215,6 +3429,11 @@ class NimiyoMusicPlayer {
             <span class="playlist-track-index">${indexStr}</span>
             <div class="playlist-track-thumb-wrap">
               <img class="playlist-track-thumb" src="${artSrc}" alt="Art" onerror="this.src='nimiyo_icon.webp'">
+              <div class="playlist-play-overlay ${isCurrent ? 'active' : ''}">
+                ${isCurrent && this.isPlaying
+                  ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>'
+                  : '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>'}
+              </div>
             </div>
             <div class="playlist-track-info">
               <div class="playlist-track-title">${this.escapeHtml(track.displayTitle)}</div>
@@ -4305,6 +4524,13 @@ class NimiyoMusicPlayer {
       });
     }
 
+    if (this.elements.miniPlayerCloseBtn) {
+      this.elements.miniPlayerCloseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.stopPlayback();
+      });
+    }
+
     if (this.elements.miniPlayerCompactPlayBtn) {
       this.elements.miniPlayerCompactPlayBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -4779,4 +5005,16 @@ class NimiyoMusicPlayer {
 // Global initialization
 window.addEventListener("DOMContentLoaded", () => {
   window.nimiyoMusicPlayer = new NimiyoMusicPlayer();
+});
+
+window.addEventListener("beforeunload", () => {
+  if (window.nimiyoMusicPlayer) {
+    window.nimiyoMusicPlayer.clearNativeNotification();
+  }
+});
+
+window.addEventListener("pagehide", () => {
+  if (window.nimiyoMusicPlayer) {
+    window.nimiyoMusicPlayer.clearNativeNotification();
+  }
 });

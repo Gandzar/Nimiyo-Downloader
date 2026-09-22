@@ -74,7 +74,8 @@ public class MusicPlaybackService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null || intent.getAction() == null) {
-            return START_STICKY;
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         String action = intent.getAction();
@@ -184,16 +185,37 @@ public class MusicPlaybackService extends Service {
 
     private void handleClearAction() {
         isPlaying = false;
-        if (mediaSession != null) {
-            updatePlaybackState(false, currentPositionMs);
-            mediaSession.setActive(false);
-        }
-        stopForeground(true);
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) {
-            manager.cancel(MUSIC_NOTIFICATION_ID);
-        }
+        try {
+            if (mediaSession != null) {
+                updatePlaybackState(false, currentPositionMs);
+                mediaSession.setActive(false);
+                mediaSession.release();
+                mediaSession = null;
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.cancel(MUSIC_NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
+
         stopSelf();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        handleClearAction();
+        super.onTaskRemoved(rootIntent);
     }
 
     private void updateMediaMetadata() {
@@ -383,11 +405,7 @@ public class MusicPlaybackService extends Service {
 
     @Override
     public void onDestroy() {
-        if (mediaSession != null) {
-            mediaSession.setActive(false);
-            mediaSession.release();
-            mediaSession = null;
-        }
+        handleClearAction();
         instance = null;
         super.onDestroy();
     }

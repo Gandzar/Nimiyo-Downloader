@@ -256,7 +256,7 @@ const translations = {
     btnResetSettings: "RESET ALL SETTINGS TO DEFAULT",
     groupAbout: "About & Help",
     menuAboutDesc: "Version, Info & Developer",
-    aboutVersion: "Version 2.0.0 (Lite)",
+    aboutVersion: "Version 2.1.0 (Lite)",
     aboutDesc: "A premium, modern, and lightweight media downloader engine built on scrapr.",
     aboutThanks: "Thanks to:",
     toastClipboardEmpty: "Clipboard is empty or does not contain a text link.",
@@ -320,8 +320,18 @@ const translations = {
     updateModalTitle: "Update Available 🚀",
     updateChangelogTitle: "Changelog:",
     updateDownloading: "Downloading update...",
-    btnLater: "Later",
-    btnUpdateNow: "UPDATE NOW",
+    btnLater: "Remind Me Later",
+    btnRemindLater: "Remind Me Later",
+    btnUpdateNow: "Update and Install",
+    btnUpdateAndInstall: "Update and Install",
+    btnManualDownload: "Download Manual Install",
+    labelAccentColor: "UI Accent Color",
+    optAccentYellow: "Yellow (Default app)",
+    optAccentBlue: "Blue",
+    optAccentRed: "Red",
+    optAccentGray: "Gray",
+    toastDownloadingApkManual: "Downloading APK file to Downloads folder...",
+    toastManualApkDownloaded: "APK file downloaded to Downloads folder. Please install manually.",
     toastAppUpToDate: "You are using the latest version (v{version}).",
     toastUpdateChecking: "Checking for updates...",
     toastUpdateCheckFailed: "Could not check for updates. Check internet connection.",
@@ -934,7 +944,7 @@ const translations = {
     btnResetSettings: "KEMBALIKAN SEMUA SETELAN KE DEFAULT",
     groupAbout: "Tentang & Bantuan",
     menuAboutDesc: "Versi, Info & Pengembang",
-    aboutVersion: "Versi 2.0.0 (Lite)",
+    aboutVersion: "Versi 2.1.0 (Lite)",
     aboutDesc: "Mesin pengunduh media premium, modern, dan ringan yang dibangun di atas scrapr.",
     aboutThanks: "Terima kasih kepada:",
     toastClipboardEmpty: "Papan klip kosong atau tidak berisi tautan teks.",
@@ -998,8 +1008,18 @@ const translations = {
     updateModalTitle: "Pembaruan Tersedia 🚀",
     updateChangelogTitle: "Catatan Pembaruan:",
     updateDownloading: "Mengunduh pembaruan...",
-    btnLater: "Nanti",
-    btnUpdateNow: "UPDATE SEKARANG",
+    btnLater: "Nanti ingatkan kembali",
+    btnRemindLater: "Nanti ingatkan kembali",
+    btnUpdateNow: "Update dan Install",
+    btnUpdateAndInstall: "Update dan Install",
+    btnManualDownload: "Download Manual Install",
+    labelAccentColor: "Warna Aksen UI",
+    optAccentYellow: "Yellow (dafault app)",
+    optAccentBlue: "Biru",
+    optAccentRed: "Merah",
+    optAccentGray: "Abu-Abu",
+    toastDownloadingApkManual: "Mengunduh file APK ke folder Download...",
+    toastManualApkDownloaded: "File APK berhasil diunduh ke folder Download. Silakan install manual.",
     toastAppUpToDate: "Aplikasi sudah dalam versi terbaru (v{version}).",
     toastUpdateChecking: "Memeriksa pembaruan...",
     toastUpdateCheckFailed: "Gagal memeriksa pembaruan. Periksa koneksi internet.",
@@ -1610,7 +1630,7 @@ const translations = {
     btnResetSettings: "恢复所有设置到默认值",
     groupAbout: "关于与帮助",
     menuAboutDesc: "版本信息、开源与开发团队",
-    aboutVersion: "版本 2.0.0 (Lite)",
+    aboutVersion: "版本 2.1.0 (Lite)",
     aboutDesc: "基于 scrapr 构建的高级、现代且轻量级的媒体下载引擎。",
     aboutThanks: "致谢:",
     toastClipboardEmpty: "剪贴板为空或不包含文本链接。",
@@ -1674,8 +1694,18 @@ const translations = {
     updateModalTitle: "发现新版本 🚀",
     updateChangelogTitle: "更新日志:",
     updateDownloading: "正在下载更新...",
-    btnLater: "稍后",
-    btnUpdateNow: "立即更新",
+    btnLater: "稍后提醒我",
+    btnRemindLater: "稍后提醒我",
+    btnUpdateNow: "更新并安装",
+    btnUpdateAndInstall: "更新并安装",
+    btnManualDownload: "手动下载安装包",
+    labelAccentColor: "UI 强调色",
+    optAccentYellow: "黄色 (默认)",
+    optAccentBlue: "蓝色",
+    optAccentRed: "红色",
+    optAccentGray: "灰色",
+    toastDownloadingApkManual: "正在下载 APK 文件到下载目录...",
+    toastManualApkDownloaded: "APK 文件已下载至下载目录，请手动安装。",
     toastAppUpToDate: "已是最新版本 (v{version})。",
     toastUpdateChecking: "正在检查更新...",
     toastUpdateCheckFailed: "检查更新失败，请检查网络连接。",
@@ -2288,7 +2318,7 @@ const translations = {
     btnResetSettings: "すべての設定を初期値に戻す",
     groupAbout: "アプリについてとヘルプ",
     menuAboutDesc: "バージョン、情報と開発チーム",
-    aboutVersion: "バージョン 2.0.0 (Lite)",
+    aboutVersion: "バージョン 2.1.0 (Lite)",
     aboutDesc: "scrapr をベースに構築されたプレミアムでモダン、軽量なメディアダウンローダー。",
     aboutThanks: "スペシャルサンクス:",
     toastClipboardEmpty: "クリップボードが空か、有効なテキストリンクが含まれていません。",
@@ -2352,8 +2382,18 @@ const translations = {
     updateModalTitle: "アップデートが利用可能です 🚀",
     updateChangelogTitle: "更新履歴:",
     updateDownloading: "更新をダウンロード中...",
-    btnLater: "後で",
-    btnUpdateNow: "今すぐ更新",
+    btnLater: "後で通知する",
+    btnRemindLater: "後で通知する",
+    btnUpdateNow: "更新してインストール",
+    btnUpdateAndInstall: "更新してインストール",
+    btnManualDownload: "手動ダウンロード・インストール",
+    labelAccentColor: "UIアクセントカラー",
+    optAccentYellow: "イエロー (既定)",
+    optAccentBlue: "ブルー",
+    optAccentRed: "レッド",
+    optAccentGray: "グレー",
+    toastDownloadingApkManual: "ダウンロードフォルダに APK を保存中...",
+    toastManualApkDownloaded: "APK ファイルがダウンロードフォルダに保存されました。手動でインストールしてください。",
     toastAppUpToDate: "最新バージョンを使用しています (v{version})。",
     toastUpdateChecking: "更新を確認中...",
     toastUpdateCheckFailed: "更新の確認に失敗しました。接続を確認してください。",
@@ -2815,6 +2855,7 @@ function detectSystemLanguage() {
 let settings = {
   language: detectSystemLanguage(),
   uiTheme: 'neobrutalism',   // 'neobrutalism' | 'softui'
+  accentColor: 'yellow',     // 'yellow' | 'blue' | 'red' | 'gray'
   autoPaste: false,
   autoAnalyze: false,
   autoClearInput: false,
@@ -2894,8 +2935,8 @@ const fallbackChains = {
 };
 
 // App Version Constants & GitHub Auto-Update Engine
-const APP_VERSION_NAME = "2.0.0";
-const APP_VERSION_CODE = 2;
+const APP_VERSION_NAME = "2.1.0";
+const APP_VERSION_CODE = 3;
 const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/nimidz/Nimiyo-Downloader/main/version.json";
 let latestUpdateInfo = null;
 
@@ -2988,6 +3029,7 @@ function saveSettings() {
   currentLanguage = settings.language || 'en';
   applyDarkMode(settings.darkMode);
   applyUiTheme(settings.uiTheme);
+  applyAccentColor(settings.accentColor);
   applyTranslations();
   syncSettingsToNative();
   showToast(getTranslation("toastSettingsSaved"), "success");
@@ -3003,6 +3045,23 @@ function applyUiTheme(theme) {
   const activeBtn = document.querySelector(".tab-btn.active");
   if (activeBtn && typeof updateTabIndicator === "function") {
     requestAnimationFrame(() => updateTabIndicator(activeBtn));
+  }
+}
+
+// Apply Accent Color
+function applyAccentColor(accent) {
+  const currentAccent = accent || settings.accentColor || 'yellow';
+  document.documentElement.setAttribute('data-accent', currentAccent);
+  document.body.setAttribute('data-accent', currentAccent);
+  const preview = document.getElementById("accentColorPreview");
+  if (preview) {
+    const colorMap = {
+      yellow: '#FFDE59',
+      blue: '#2563EB',
+      red: '#EF4444',
+      gray: '#64748B'
+    };
+    preview.style.backgroundColor = colorMap[currentAccent] || colorMap.yellow;
   }
 }
 
@@ -3362,6 +3421,7 @@ function wipeAllData() {
     localStorage.removeItem("nimiyo_last_cache_cleanup");
     settings = {
       language: detectSystemLanguage(),
+      accentColor: 'yellow',
       autoPaste: false,
       autoAnalyze: false,
       autoClearInput: false,
@@ -3402,6 +3462,7 @@ function resetSettingsToDefault() {
   if (confirm(getTranslation("confirmResetSettings"))) {
     settings = {
       language: detectSystemLanguage(),
+      accentColor: 'yellow',
       autoPaste: false,
       autoAnalyze: false,
       autoClearInput: false,
@@ -3466,6 +3527,7 @@ function initUI() {
 
   setVal("settingLanguage", settings.language || 'en');
   setVal("settingUiTheme", settings.uiTheme || 'neobrutalism');
+  setVal("settingAccentColor", settings.accentColor || 'yellow');
   setChecked("settingAutoPaste", settings.autoPaste);
   setChecked("settingAutoAnalyze", settings.autoAnalyze);
   setChecked("settingAutoClearInput", settings.autoClearInput);
@@ -3492,6 +3554,7 @@ function initUI() {
   setChecked("settingKeepAwake", settings.keepAwake);
 
   applyAppFont(settings.appFont);
+  applyAccentColor(settings.accentColor);
   applyKeepAwake(settings.keepAwake);
   updateStorageSizeDisplay();
   runAutoCleanups();
@@ -3806,6 +3869,7 @@ function setupEventListeners() {
 
   bindChange("settingLanguage", "language");
   bindChange("settingUiTheme", "uiTheme", false, applyUiTheme);
+  bindChange("settingAccentColor", "accentColor", false, applyAccentColor);
   bindChange("settingAutoPaste", "autoPaste", true, (val) => {
     if (val) {
       setTimeout(checkClipboardOnResume, 200);
@@ -4136,12 +4200,21 @@ function setupEventListeners() {
     });
   }
 
-  // Update Now button
+  // Update Now / Update & Install button
   const btnStartUpdate = document.getElementById("btnStartUpdate");
   if (btnStartUpdate) {
     btnStartUpdate.addEventListener("click", () => {
       triggerHaptic();
       downloadAndInstallUpdate();
+    });
+  }
+
+  // Download Manual Install button
+  const btnManualDownloadUpdate = document.getElementById("btnManualDownloadUpdate");
+  if (btnManualDownloadUpdate) {
+    btnManualDownloadUpdate.addEventListener("click", () => {
+      triggerHaptic();
+      downloadManualUpdate();
     });
   }
 
@@ -6779,11 +6852,110 @@ function showUpdateModal(data) {
   if (actionRow) actionRow.classList.remove("hidden");
   if (startBtn) {
     startBtn.disabled = false;
-    startBtn.innerText = getTranslation("btnUpdateNow");
+    startBtn.innerText = getTranslation("btnUpdateAndInstall");
+  }
+  const manualBtn = document.getElementById("btnManualDownloadUpdate");
+  if (manualBtn) {
+    manualBtn.disabled = false;
+    manualBtn.innerText = getTranslation("btnManualDownload");
+  }
+  const laterBtn = document.getElementById("btnLaterUpdate");
+  if (laterBtn) {
+    laterBtn.innerText = getTranslation("btnRemindLater");
   }
 
   modal.classList.remove("hidden");
   triggerHaptic();
+}
+
+// Download APK manually to Download directory without auto-install
+async function downloadManualUpdate(apkUrl) {
+  if (!apkUrl) {
+    apkUrl = latestUpdateInfo?.downloadUrl;
+  }
+  if (!apkUrl) return;
+
+  const version = latestUpdateInfo?.versionName || latestUpdateInfo?.versionCode || "latest";
+  const fileName = `Nimiyo_v${version}.apk`;
+
+  const progressBox = document.getElementById("updateDownloadProgressBox");
+  const actionRow = document.getElementById("updateActionRow");
+  const progressBarFill = document.getElementById("updateProgressBarFill");
+  const progressPercentText = document.getElementById("updateProgressPercent");
+  const progressText = document.getElementById("updateProgressText");
+
+  if (progressBox) progressBox.classList.remove("hidden");
+  if (actionRow) actionRow.classList.add("hidden");
+  if (progressText) progressText.innerText = getTranslation("toastDownloadingApkManual", "Mengunduh file APK ke folder Download...");
+
+  let downloadPercent = 0;
+  const simInterval = setInterval(() => {
+    if (downloadPercent < 90) {
+      downloadPercent += Math.floor(Math.random() * 8) + 3;
+      if (downloadPercent > 90) downloadPercent = 90;
+      if (progressBarFill) progressBarFill.style.width = `${downloadPercent}%`;
+      if (progressPercentText) progressPercentText.innerText = `${downloadPercent}%`;
+    }
+  }, 250);
+
+  try {
+    const MediaSaver = window.Capacitor?.Plugins?.MediaSaver;
+
+    if (MediaSaver && typeof MediaSaver.downloadFile === "function" && window.Capacitor?.isNativePlatform()) {
+      await MediaSaver.downloadFile({
+        url: apkUrl,
+        fileName: fileName,
+        fileType: "apk"
+      });
+      clearInterval(simInterval);
+      if (progressBarFill) progressBarFill.style.width = "100%";
+      if (progressPercentText) progressPercentText.innerText = "100%";
+      if (progressText) progressText.innerText = getTranslation("toastManualApkDownloaded", "File APK tersimpan di folder Download. Silakan pasang secara manual.");
+      
+      showToast(getTranslation("toastManualApkDownloaded", "File APK tersimpan di folder Download. Silakan pasang secara manual."), "success");
+      
+      setTimeout(() => {
+        document.getElementById("updateModal")?.classList.add("hidden");
+        if (progressBox) progressBox.classList.add("hidden");
+        if (actionRow) actionRow.classList.remove("hidden");
+      }, 1500);
+    } else if (Filesystem && window.Capacitor?.isNativePlatform()) {
+      const dlRes = await Filesystem.downloadFile({
+        url: apkUrl,
+        path: fileName,
+        directory: "CACHE"
+      });
+      if (MediaSaver && typeof MediaSaver.saveToPublicStorage === "function") {
+        await MediaSaver.saveToPublicStorage({
+          filePath: dlRes?.path || fileName,
+          fileName: fileName,
+          fileType: "apk"
+        });
+      }
+      clearInterval(simInterval);
+      if (progressBarFill) progressBarFill.style.width = "100%";
+      if (progressPercentText) progressPercentText.innerText = "100%";
+      showToast(getTranslation("toastManualApkDownloaded", "File APK tersimpan di folder Download. Silakan pasang secara manual."), "success");
+      setTimeout(() => {
+        document.getElementById("updateModal")?.classList.add("hidden");
+        if (progressBox) progressBox.classList.add("hidden");
+        if (actionRow) actionRow.classList.remove("hidden");
+      }, 1500);
+    } else {
+      clearInterval(simInterval);
+      window.open(apkUrl, "_blank");
+      showToast(getTranslation("toastDownloadSuccess"), "success");
+      document.getElementById("updateModal")?.classList.add("hidden");
+      if (progressBox) progressBox.classList.add("hidden");
+      if (actionRow) actionRow.classList.remove("hidden");
+    }
+  } catch (err) {
+    clearInterval(simInterval);
+    console.error("downloadManualUpdate error:", err);
+    if (progressBox) progressBox.classList.add("hidden");
+    if (actionRow) actionRow.classList.remove("hidden");
+    showToast(`${getTranslation("toastDownloadFailManualServer")}: ${err.message}`, "error");
+  }
 }
 
 // Download and Install APK Update

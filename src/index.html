@@ -13,14 +13,17 @@
         var theme = "neobrutalism";
         var darkMode = false;
         var fontKey = "misans";
+        var accent = "yellow";
         if (raw) {
           var s = JSON.parse(raw);
           if (s.uiTheme) theme = s.uiTheme;
           if (typeof s.darkMode === "boolean") darkMode = s.darkMode;
           if (s.appFont) fontKey = s.appFont;
+          if (s.accentColor) accent = s.accentColor;
         }
         var root = document.documentElement;
         root.className = "theme-" + theme + (darkMode ? " dark-mode" : " light-mode");
+        root.setAttribute("data-accent", accent);
         
         var fontMap = {
           misans: "'MiSans', sans-serif",
@@ -47,12 +50,15 @@
         var raw = localStorage.getItem("nimiyo_settings");
         var theme = "neobrutalism";
         var darkMode = false;
+        var accent = "yellow";
         if (raw) {
           var s = JSON.parse(raw);
           if (s.uiTheme) theme = s.uiTheme;
           if (typeof s.darkMode === "boolean") darkMode = s.darkMode;
+          if (s.accentColor) accent = s.accentColor;
         }
         document.body.className = "theme-" + theme + (darkMode ? " dark-mode" : " light-mode");
+        document.body.setAttribute("data-accent", accent);
       } catch (e) {}
     })();
   </script>
@@ -287,7 +293,7 @@
               <img src="icon_untukdi_aboutthisapp.webp" alt="Nimiyo App Logo" class="about-logo">
               <div class="about-title-group">
                 <h4>NIMIYO Downloader</h4>
-                <div class="about-badge-pill" data-i18n="aboutVersion">v2.0.0 (Lite)</div>
+                <div class="about-badge-pill" data-i18n="aboutVersion">v2.1.0 (Lite)</div>
               </div>
             </div>
 
@@ -434,6 +440,18 @@
                 <option value="neobrutalism" data-i18n="optThemeNeobrutalism">Neo-Brutalism</option>
                 <option value="softui" data-i18n="optThemeSoftUi">Soft UI</option>
               </select>
+            </div>
+            <div class="setting-item">
+              <label for="settingAccentColor" data-i18n="labelAccentColor">Warna Aksen UI</label>
+              <div class="accent-color-wrap">
+                <div class="accent-color-dot" id="accentColorPreview"></div>
+                <select id="settingAccentColor">
+                  <option value="yellow" data-i18n="optAccentYellow">Yellow (dafault app)</option>
+                  <option value="blue" data-i18n="optAccentBlue">Biru</option>
+                  <option value="red" data-i18n="optAccentRed">Merah</option>
+                  <option value="gray" data-i18n="optAccentGray">Abu-Abu</option>
+                </select>
+              </div>
             </div>
             <div class="setting-item">
               <label for="settingDarkMode" data-i18n="labelDarkMode">Dark Mode</label>
@@ -787,13 +805,19 @@
             <span class="visualizer-bar bar-4"></span>
           </div>
           <button id="miniPlayerPlayBtn" class="icon-btn mini-player-btn play-btn" aria-label="Play/Pause">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
           </button>
-          <button id="miniPlayerMinimizeBtn" class="icon-btn mini-player-btn minimize-red-btn" aria-label="Minimize" title="Minimize">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round">
+          <button id="miniPlayerMinimizeBtn" class="icon-btn mini-player-btn minimize-btn" aria-label="Minimize" title="Minimize">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
               <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
+          <button id="miniPlayerCloseBtn" class="icon-btn mini-player-btn close-btn" aria-label="Close Player" title="Stop & Close">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
         </div>
@@ -942,7 +966,7 @@
       </div>
       <div class="modal-body update-modal-body">
         <div class="update-banner">
-          <div class="update-version-badge" id="updateVersionBadge">v2.0.0</div>
+          <div class="update-version-badge" id="updateVersionBadge">v2.1.0</div>
           <div class="update-app-title">NIMIYO Downloader (Lite)</div>
         </div>
         <div class="update-changelog-box">
@@ -961,8 +985,9 @@
           </div>
         </div>
         <div class="action-row update-action-row" id="updateActionRow">
-          <button id="btnLaterUpdate" class="btn outline-btn" data-i18n="btnLater">Nanti</button>
-          <button id="btnStartUpdate" class="btn primary-btn" data-i18n="btnUpdateNow">UPDATE SEKARANG</button>
+          <button id="btnStartUpdate" class="btn primary-btn" data-i18n="btnUpdateAndInstall">Update dan Install</button>
+          <button id="btnManualDownloadUpdate" class="btn outline-btn" data-i18n="btnManualDownload">Download Manual Install</button>
+          <button id="btnLaterUpdate" class="btn outline-btn" data-i18n="btnRemindLater">Nanti ingatkan kembali</button>
         </div>
       </div>
     </div>
