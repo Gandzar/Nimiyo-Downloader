@@ -34,22 +34,16 @@ jobs:
       - name: Build Web Assets
         run: npm run build --if-present
 
-      - name: Add Android Platform
-        run: npx cap add android || true
-
       - name: Sync Capacitor
-        run: npx cap sync android || true
+        run: |
+          npx cap add android || true
+          npx cap sync android
 
       - name: Build Android APK
         run: |
-          if [ -d "android" ]; then
-            cd android
-            chmod +x gradlew
-            ./gradlew assembleRelease -Dorg.gradle.java.home="$JAVA_HOME"
-          else
-            echo "Folder android tidak ditemukan!"
-            exit 1
-          fi
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease -Dorg.gradle.java.home="$JAVA_HOME"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
