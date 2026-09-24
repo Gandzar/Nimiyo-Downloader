@@ -44,6 +44,12 @@ jobs:
           npx @capacitor/cli sync android || true
           npx @capacitor/cli update android || true
 
+      - name: Fix Kotlin Duplicate Classes
+        run: |
+          if [ -f "android/build.gradle" ]; then
+            echo 'allprojects { configurations.all { resolutionStrategy.eachDependency { details -> if (details.requested.group == "org.jetbrains.kotlin" && (details.requested.name == "kotlin-stdlib-jdk7" || details.requested.name == "kotlin-stdlib-jdk8")) { details.useTarget "org.jetbrains.kotlin:kotlin-stdlib:1.8.22" } } } }' >> android/build.gradle
+          fi
+
       - name: Build Android APK
         run: |
           cd android
