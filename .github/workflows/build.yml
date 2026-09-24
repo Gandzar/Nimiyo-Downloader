@@ -25,10 +25,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Dependencies & Capacitor CLI
+      - name: Install Dependencies
         run: |
           npm install --legacy-peer-deps
-          npm install @capacitor/cli @capacitor/core --legacy-peer-deps
+          npm install @capacitor/cli @capacitor/core @capacitor/android --legacy-peer-deps
 
       - name: Create missing directories
         run: mkdir -p src/scrapers src/utils www js/scrapers js/utils
@@ -36,10 +36,13 @@ jobs:
       - name: Build Web Assets
         run: npm run build --if-present
 
-      - name: Sync Capacitor
+      - name: Prepare Capacitor Android
         run: |
+          mkdir -p android/capacitor-cordova-android-plugins
+          echo "// Auto-generated file" > android/capacitor-cordova-android-plugins/cordova.variables.gradle
           npx @capacitor/cli add android || true
           npx @capacitor/cli sync android || true
+          npx @capacitor/cli update android || true
 
       - name: Build Android APK
         run: |
