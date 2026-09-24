@@ -44,6 +44,15 @@ jobs:
           npx @capacitor/cli sync android || true
           npx @capacitor/cli update android || true
 
+      - name: Override App Name & Package ID Native
+        run: |
+          # Ubah nama aplikasi di strings.xml
+          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Nama Aplikasi Baru<\/string>/g' android/app/src/main/res/values/strings.xml || true
+          sed -i 's/<string name="title_activity_main">.*<\/string>/<string name="title_activity_main">Nama Aplikasi Baru<\/string>/g' android/app/src/main/res/values/strings.xml || true
+
+          # Ubah applicationId di build.gradle
+          sed -i 's/applicationId ".*"/applicationId "com.gandzar.downloader"/g' android/app/build.gradle || true
+
       - name: Fix Kotlin Duplicate Classes
         run: |
           if [ -f "android/build.gradle" ]; then
