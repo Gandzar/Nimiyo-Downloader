@@ -29,7 +29,7 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Create missing directories
-        run: mkdir -p src/scrapers www
+        run: mkdir -p src/scrapers src/utils www js/scrapers js/utils
 
       - name: Build Web Assets
         run: npm run build --if-present
