@@ -12,7 +12,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -30,7 +31,7 @@ jobs:
           npm install --legacy-peer-deps
           npm install @capacitor/cli @capacitor/core @capacitor/android --legacy-peer-deps
 
-      - name: Create missing directories
+      - name: Create fallback directories if empty
         run: mkdir -p src/scrapers src/utils www js/scrapers js/utils
 
       - name: Build Web Assets
@@ -46,12 +47,14 @@ jobs:
 
       - name: Override App Name & Package ID Native
         run: |
-          # Ubah nama aplikasi di strings.xml
-          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Nama Aplikasi Baru<\/string>/g' android/app/src/main/res/values/strings.xml || true
-          sed -i 's/<string name="title_activity_main">.*<\/string>/<string name="title_activity_main">Nama Aplikasi Baru<\/string>/g' android/app/src/main/res/values/strings.xml || true
-
-          # Ubah applicationId di build.gradle
+          # Ubah Package ID di build.gradle
           sed -i 's/applicationId ".*"/applicationId "com.gandzar.downloader"/g' android/app/build.gradle || true
+
+          # Ubah Nama Aplikasi di strings.xml
+          if [ -f "android/app/src/main/res/values/strings.xml" ]; then
+            sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Gandzar Downloader<\/string>/g' android/app/src/main/res/values/strings.xml
+            sed -i 's/<string name="title_activity_main">.*<\/string>/<string name="title_activity_main">Gandzar Downloader<\/string>/g' android/app/src/main/res/values/strings.xml
+          fi
 
       - name: Fix Kotlin Duplicate Classes
         run: |
